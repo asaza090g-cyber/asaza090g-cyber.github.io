@@ -1,4 +1,4 @@
-/* GML Detailing — стили. Тёмный строгий стиль + Liquid Glass на элементах интерфейса.
+/* Детейлинг-центр — стили. Тёмный строгий стиль + Liquid Glass на элементах интерфейса.
    Порядок: токены → основа → стекло → кнопки и поля → разделы страниц → окна → анимации. */
 
 /* ---------- токены ---------- */
@@ -171,6 +171,10 @@ label.field > span { display: block; margin-bottom: 6px; color: var(--text-2); f
 /* ---------- шапка ---------- */
 .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
 .logo { display: block; height: 56px; width: auto; max-width: 62vw; filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5)); }
+.brand { display: flex; align-items: center; gap: 12px; min-height: 44px; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.24em; line-height: 1; }
+.brand-mark { width: 58px; height: auto; color: #d9dee6; flex: 0 0 auto; }
+.logo-av .brand-mark { width: 76%; }
+.brand span { background: linear-gradient(180deg, #f4f6f9, #9aa3b0); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .addr { display: flex; gap: 6px; align-items: center; margin-top: 6px; color: var(--text-2); font-size: 14px; }
 .addr a { color: var(--text-2); text-decoration: none; }
 .head > .btn { flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; line-height: 24px; }

@@ -1,6 +1,6 @@
 // Интерфейс сайта. Данные хранятся на сервере Supabase (см. api.js).
 const CENTER = {
-  name: 'GML Detailing',
+  name: 'Детейлинг-центр',
   address: 'г. Екатеринбург, центр, ул. Вайнера, 10',
   phone: '+7 (343) 000-00-00',
   map: 'https://yandex.ru/maps/?text=' + encodeURIComponent('Екатеринбург, ул. Вайнера, 10'),
@@ -270,7 +270,7 @@ function hexHue(hex) {
   return Math.round((h * 60 + 360) % 360);
 }
 // у владельца вместо буквы — логотип
-const ownerAvatar = (cls = '') => `<span class="avatar logo-av ${cls}" aria-hidden="true"><img src="icon-192.png" alt=""></span>`;
+const ownerAvatar = (cls = '') => `<span class="avatar logo-av ${cls}" aria-hidden="true">${BRAND_MARK}</span>`;
 
 function profileMenu() {
   const u = state.user;
@@ -293,8 +293,12 @@ function closeProfile() {
   if (m && !m.hidden) { m.hidden = true; document.querySelector('.profile-btn')?.setAttribute('aria-expanded', 'false'); }
 }
 
+// нейтральный знак вместо логотипа (силуэт машины, как на иконке)
+const BRAND_MARK = `<svg class="brand-mark" viewBox="2 4 61 23" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 22 L4 18 Q4 15 8 14 L18 12 Q26 5 36 6 Q42 7 47 12 L58 15 Q61 16 61 19 L61 22 L54 22 A5 5 0 0 0 44 22 L22 22 A5 5 0 0 0 12 22 Z"/>
+  <path d="M21 12.4 Q27 8 35 8.4 Q40 9 43.5 12.2 Z" stroke-width="1.2"/><circle cx="49" cy="22" r="3.6"/><circle cx="17" cy="22" r="3.6"/></g></svg>`;
 function header() {
-  return `<div class="head"><div><h1><img class="logo" src="logo.png" alt="${CENTER.name}"></h1>
+  return `<div class="head"><div><h1 class="brand" aria-label="${CENTER.name}">${BRAND_MARK}<span>DETAILING</span></h1>
     ${state.tab === 'home' ? `<div class="addr">${ico('pin')}<a href="${CENTER.map}" target="_blank" rel="noopener">${CENTER.address}</a></div>` : ''}</div>
     ${state.user ? profileMenu() : '<button class="btn sm primary" data-act="login">Войти</button>'}</div>`;
 }
@@ -505,7 +509,7 @@ const installHidden = () => { try { return localStorage.getItem('gml_install_hid
 function installCard() {
   if (isStandalone() || !isMobile() || installHidden()) return '';
   return `<div class="card glass install"><button class="install-x" data-act="install-x" aria-label="Скрыть плашку"><span aria-hidden="true">×</span></button>
-    <img src="icon-192.png" alt="">
+    <img src="icon-car-192.png" alt="">
     <div class="install-text"><h3>Добавить сайт на главный экран</h3>
       <p class="muted small">Своя иконка на экране.<br>Быстрый доступ к сайту.</p></div>
     <button class="btn sm primary" data-act="install">Добавить</button></div>`;
@@ -674,7 +678,7 @@ function exportCsv() {
   const csv = '﻿' + [head, ...rows].map((r) => r.map(cell).join(';')).join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
-  a.href = url; a.download = `gml-zapisi-${dayKey(new Date())}.csv`;
+  a.href = url; a.download = `zapisi-${dayKey(new Date())}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   toast(`Выгружено записей: ${list.length}`);
@@ -732,16 +736,16 @@ function addToCalendar(b) {
   const utc = (h) => { const x = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), h - 5)); return x.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z'; };
   const names = itemsOf(b).list.map((s) => s.name).join(', ');
   const icsEsc = (s) => String(s).replace(/[\\;,]/g, (c) => '\\' + c).replace(/\n/g, '\\n');
-  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//GML Detailing//RU', 'BEGIN:VEVENT',
-    `UID:gml-${b.id}@gml-detailing`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`,
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Detailing//RU', 'BEGIN:VEVENT',
+    `UID:booking-${b.id}@detailing`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`,
     `DTSTART:${utc(b.hour)}`, `DTEND:${utc(b.hour + 1)}`,
-    `SUMMARY:${icsEsc('GML Detailing: ' + names)}`, `LOCATION:${icsEsc(CENTER.address)}`,
+    `SUMMARY:${icsEsc(CENTER.name + ': ' + names)}`, `LOCATION:${icsEsc(CENTER.address)}`,
     `DESCRIPTION:${icsEsc(`Запись №${b.id}. ${names}. Итого: ${b.total} ₽. Автомобиль: ${b.car}`)}`,
-    'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Скоро запись в GML Detailing', 'END:VALARM',
+    'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Скоро запись: ' + CENTER.name, 'END:VALARM',
     'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
   const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
   const a = document.createElement('a');
-  a.href = url; a.download = `gml-zapis-${b.id}.ics`;
+  a.href = url; a.download = `zapis-${b.id}.ics`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }

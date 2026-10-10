@@ -1,7 +1,7 @@
 {
-  "name": "GML Detailing",
-  "short_name": "GML Detailing",
-  "description": "Запись в детейлинг-центр GML Detailing",
+  "name": "Детейлинг-центр",
+  "short_name": "Детейлинг",
+  "description": "Онлайн-запись в детейлинг-центр",
   "lang": "ru",
   "start_url": "./",
   "scope": "./",
@@ -10,7 +10,7 @@
   "background_color": "#0c0d10",
   "theme_color": "#0c0d10",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "icon-car-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-car-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }
