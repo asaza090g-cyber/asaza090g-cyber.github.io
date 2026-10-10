@@ -511,22 +511,12 @@ function installCard() {
     <button class="btn sm primary" data-act="install">Добавить</button></div>`;
 }
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-// shared = меню «Поделиться» уже открыто сайтом, осталось выбрать нужный пункт
-function installSheet(shared) {
+function installSheet() {
   const ios = isIOS();
-  if (shared) {
-    return openSimple(`<h2>Почти готово</h2>
-      <div class="card glass"><ol class="steps-list">
-        <li>В открывшемся меню «Поделиться» пролистайте список вниз.</li>
-        <li>Выберите <b>«На экран Домой»</b>.</li>
-        <li>Нажмите <b>«Добавить»</b> вверху справа.</li></ol></div>
-      <p class="muted small" style="margin-top:4px">Меню закрылось раньше? Нажмите «Открыть снова».</p>
-      <div class="actions"><button class="btn" data-act="close">Готово</button><button class="btn primary" data-act="install">Открыть снова</button></div>`);
-  }
   openSimple(`<h2>Добавить на главный экран</h2>
     <p class="muted small" style="margin-bottom:12px">Сайт появится на экране телефона со своей иконкой и будет открываться как приложение.</p>
     <div class="card glass"><ol class="steps-list">${ios
-      ? '<li>Откройте сайт в <b>Safari</b>.</li><li>Нажмите кнопку <b>«Поделиться»</b> (квадрат со стрелкой) внизу экрана.</li><li>Выберите <b>«На экран Домой»</b>.</li><li>Нажмите <b>«Добавить»</b>.</li>'
+      ? '<li>Откройте сайт в <b>Safari</b>. Если он открыт из Telegram или другого приложения — сначала нажмите «Открыть в Safari».</li><li>Нажмите кнопку Safari <b>«Поделиться»</b> (квадрат со стрелкой вверх). Не видно её — нажмите <b>«•••»</b> рядом с адресной строкой, затем «Поделиться».</li><li>Пролистайте вниз и выберите <b>«На экран «Домой»»</b> (бывает под кнопкой «Ещё»).</li><li>Нажмите <b>«Добавить»</b>.</li>'
       : '<li>Нажмите меню браузера <b>⋮</b> (три точки) вверху справа.</li><li>Выберите <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b>.</li><li>Подтвердите.</li>'}</ol></div>
     <div class="actions"><button class="btn primary" data-act="close">Понятно</button></div>`);
 }
@@ -1174,12 +1164,7 @@ document.addEventListener('click', (e) => {
     install: () => {
       // Android (Chrome): системное окно установки
       if (installPrompt) { installPrompt.prompt(); installPrompt.userChoice.catch(() => {}).finally(() => { installPrompt = null; }); return; }
-      // iPhone: сразу открываем меню «Поделиться», в нём есть пункт «На экран Домой» (работает только по https)
-      if (isIOS() && navigator.share) {
-        installSheet(true);
-        navigator.share({ title: 'GML Detailing', url: location.href.split('#')[0] }).catch(() => {});
-        return;
-      }
+      // iPhone: пункт «На экран Домой» есть только в меню «Поделиться» самого Safari, поэтому показываем инструкцию
       installSheet();
     },
     ofilter: () => {
