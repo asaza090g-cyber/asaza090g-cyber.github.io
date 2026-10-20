@@ -19,7 +19,7 @@ function errText(e) {
 }
 
 const api = (() => {
-  const DEMO_KEY = 'demo-' + CONFIG.id + '-v2';
+  const DEMO_KEY = 'demo-' + CONFIG.id + '-v3';
   const DM = CONFIG.masters?.list || [];
   const OWNER = { id: 'owner', name: 'Владелец', phone: '9000000000', isOwner: true, color: null };
   const ME = { id: 'client', name: CONFIG.demoData.me, phone: '9001234567', isOwner: false, color: null };
@@ -46,7 +46,8 @@ const api = (() => {
     const r = rng(Number(today.replace(/-/g, '')) + CONFIG.id.length * 7919);
     const pick = (a) => a[Math.floor(r() * a.length)];
     const services = CONFIG.services.map((s, i) => ({ ...s, sort: i + 1, active: true, hidden: false }));
-    const clients = (D.clients || NAMES).map((name, i) => ({ id: 'c' + i, name, phone: '9' + String(100000000 + Math.floor(r() * 899999999)) }));
+    // около 90 клиентов: имя + первая буква фамилии, чтобы визиты распределялись правдоподобно
+    const clients = Array.from({ length: 90 }, (_, i) => ({ id: 'c' + i, name: pick(D.clients || NAMES) + ' ' + pick('АБВГДЕЗИКЛМНОПРСТФХЧШЯ'.split('')) + '.', phone: '9' + String(100000000 + Math.floor(r() * 899999999)) }));
     const cap = DM.length || CONFIG.capacity;
     const store = { day: today, seq: 1001, services, bookings: [], blocks: [], cars: { client: [] }, users: {}, session: null,
       settings: { promo: { ...D.promo }, schedule: clone(CONFIG.schedule), capacity: cap, closed: [], cancelHours: 3 },
