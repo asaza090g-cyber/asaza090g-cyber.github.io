@@ -1,26 +1,16 @@
-// Интерфейс сайта. Данные хранятся на сервере Supabase (см. api.js).
-const CENTER = {
-  name: 'Детейлинг-центр',
-  address: 'г. Екатеринбург, центр, ул. Вайнера, 10',
-  phone: '+7 (343) 000-00-00',
-  map: 'https://yandex.ru/maps/?text=' + encodeURIComponent('Екатеринбург, ул. Вайнера, 10'),
-  payUrl: 'https://example.com/pay', // временная ссылка на оплату, заменить на настоящую
-};
+// Интерфейс сайта. Всё, что зависит от ниши (название, услуги, тексты, мастера), — в config*.js.
+// Данные — на сервере (api.js) или, в демо-версии, прямо в браузере (api-demo.js).
+const CENTER = CONFIG;
 const payUrl = (b) => `${CENTER.payUrl}?order=${b.id}&amount=${b.total}`;
 // график работы по умолчанию (пока не загрузился из базы): 0 = воскресенье … 6 = суббота; null — выходной
-const DEFAULT_SCHEDULE = [null, { open: 10, close: 21 }, { open: 10, close: 21 }, { open: 10, close: 21 }, { open: 10, close: 21 }, { open: 10, close: 21 }, { open: 10, close: 18 }];
-
+const DEFAULT_SCHEDULE = CONFIG.schedule;
 // услуги по умолчанию, пока не загрузились из базы
-const DEFAULT_SERVICES = [
-  { id: 1, name: 'Полировка кузова', price: 13000, img: 'polish-body.jpg', desc: 'Оценка состояния ЛКП, обезжиривание, глубокая очистка глиной и автоскрабом, восстановительная полировка, усиление блеска и защита неабразивной пастой.' },
-  { id: 2, name: 'Химчистка салона', price: 1000, img: 'interior.jpg', desc: 'Глубокая сухая и влажная чистка салона и багажника с разбором. Труднодоступные места, решётки динамиков, ремни, воздуховоды, климат-контроль, руль.' },
-  { id: 3, name: 'Химчистка подкапотного пространства', price: 3000, img: 'engine.jpg', desc: 'Мойка моторного отсека диэлектрическим шампунем с последующей консервацией.' },
-  { id: 4, name: 'Защитные покрытия на кузов', price: 5000, img: 'coating.jpg', desc: 'Керамика, воски, силанты. Усиливают блеск и цвет ЛКП, защищают от дорожных реагентов.' },
-  { id: 5, name: 'Удаление вмятин PDR', price: 1000, img: 'pdr.jpg', desc: 'Удаление вмятин без окраса клеевой системой и крючками.' },
-  { id: 6, name: 'Предпродажная подготовка', price: 8000, img: 'presale.jpg', desc: 'Комплексная подготовка автомобиля к продаже.' },
-  { id: 7, name: 'Полировка стекла', price: 5000, img: 'glass.jpg', desc: 'Удаление царапин и следов от дворников со стекла.' },
-  { id: 8, name: 'Ремонт сколов и трещин на лобовом стекле', price: null, img: 'windshield-repair.jpg', desc: 'Ремонт сколов и трещин. Стоимость уточняйте по телефону.' },
-];
+const DEFAULT_SERVICES = CONFIG.services;
+// «центр не работает», «салон закрыт», «студия закрыта»
+const PLACE = CONFIG.place;
+const Place = PLACE[0].toUpperCase() + PLACE.slice(1);
+const closedWord = CONFIG.placeFem ? 'закрыта' : 'закрыт';
+const MASTERS = CONFIG.masters?.list || [];
 
 const state = {
   tab: 'home',
@@ -37,7 +27,7 @@ const state = {
   services: DEFAULT_SERVICES,
   move: null, // перенос записи: { id, date, hour }
   promo: { on: false, percent: 0, text: '' },
-  sched: { schedule: DEFAULT_SCHEDULE, capacity: 3, closed: [], cancelHours: 3 }, // график, боксы, нерабочие даты, правило отмены
+  sched: { schedule: DEFAULT_SCHEDULE, capacity: MASTERS.length || CONFIG.capacity, closed: [], cancelHours: 3 }, // график, места, нерабочие даты, правило отмены
   cars: [], // «мой гараж»
   ownerView: 'records', // записи / клиенты / статистика
   statsPeriod: 30,
@@ -136,7 +126,7 @@ async function refreshCounts() {
   state.counts = await api.counts(days[0], days[days.length - 1]);
 }
 async function loadPrivate() {
-  state.cars = state.user && !state.owner ? await api.cars().catch(() => []) : [];
+  state.cars = CONFIG.car && state.user && !state.owner ? await api.cars().catch(() => []) : [];
   state.bookings = state.user ? await api.bookings() : [];
   state.blocks = state.owner ? await api.blocks() : [];
 }
@@ -148,7 +138,7 @@ async function reloadAll() {
     await withTimeout((async () => {
       const [s, reviews] = await Promise.all([api.settings(), api.reviews()]);
       state.promo = s.promo; state.reviews = reviews;
-      if (s.schedule) state.sched = { schedule: s.schedule, capacity: s.capacity || 3, closed: s.closed || [], cancelHours: s.cancelHours ?? 3 };
+      if (s.schedule) state.sched = { schedule: s.schedule, capacity: MASTERS.length || s.capacity || 3, closed: s.closed || [], cancelHours: s.cancelHours ?? 3 };
       // если обновление базы №1 ещё не запущено, остаются услуги по умолчанию
       state.services = await api.services().catch(() => state.services);
       await Promise.all([refreshCounts(), loadPrivate()]);
@@ -170,6 +160,26 @@ function slotInfo(key, h) {
   return { base, hold, mine, busy, free: cap() - busy, past };
 }
 
+// ---------- мастера ----------
+const masterById = (id) => MASTERS.find((m) => m.id === id);
+// мастера, которые делают все выбранные услуги (у услуги без списка — любой)
+function mastersFor(ids) {
+  return MASTERS.filter((m) => ids.every((id) => {
+    const s = state.services.find((x) => x.id === id);
+    return !s?.masters || s.masters.includes(m.id);
+  }));
+}
+// можно ли записаться: есть общее место и, если есть мастера, свободен выбранный (или любой подходящий)
+function freeAt(date, h, master, ids) {
+  const s = slotInfo(date, h);
+  if (s.past || s.free <= 0) return false;
+  if (!MASTERS.length) return true;
+  const busy = state.counts[date + '|' + h]?.masters || [];
+  const cand = master ? [master] : mastersFor(ids).map((m) => m.id);
+  if (!cand.length) return true; // услуги делают разные мастера — хватает общего свободного места
+  return cand.some((id) => !busy.includes(id));
+}
+
 // ---------- расчёт цены ----------
 function totals(ids) {
   const list = ids.map((id) => state.services.find((s) => s.id === id)).filter(Boolean);
@@ -183,7 +193,7 @@ function itemsOf(b) {
   const list = b.items || b.services.map((id) => state.services.find((s) => s.id === id) || { name: 'Услуга', price: null });
   return { list, unknown: list.some((s) => s.price === null) };
 }
-const priceLabel = (s) => (s.price === null ? 'по телефону' : 'от ' + money(s.price));
+const priceLabel = (s) => (s.price === null ? 'по телефону' : s.price === 0 ? 'бесплатно' : 'от ' + money(s.price));
 
 // ---------- экраны ----------
 const ICONS = {
@@ -193,6 +203,9 @@ const ICONS = {
   pin: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
   car: '<svg viewBox="0 0 24 24"><path d="M4 16.5V12l2.2-5.2A2 2 0 0 1 8 5.5h8a2 2 0 0 1 1.8 1.3L20 12v4.5"/><path d="M4 12h16M3 16.5h18"/><circle cx="7.5" cy="16.5" r="1.8"/><circle cx="16.5" cy="16.5" r="1.8"/></svg>',
   phone: '<svg viewBox="0 0 24 24"><path d="M6.6 3h3l1.5 4.5-2.2 1.4a12 12 0 0 0 6.2 6.2l1.4-2.2 4.5 1.5v3a2 2 0 0 1-2.2 2A16.8 16.8 0 0 1 4.6 5.2 2 2 0 0 1 6.6 3z"/></svg>',
+  user: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>',
+  clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  photo: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="3"/><path d="M8 6l1.5-2h5L16 6"/><circle cx="12" cy="13" r="3.5"/></svg>',
 };
 // маленькая иконка в строке текста (для чтения с экрана скрыта — рядом всегда есть текст)
 const ico = (name) => ICONS[name].replace('<svg ', '<svg class="ico" aria-hidden="true" ');
@@ -293,12 +306,31 @@ function closeProfile() {
   if (m && !m.hidden) { m.hidden = true; document.querySelector('.profile-btn')?.setAttribute('aria-expanded', 'false'); }
 }
 
-// нейтральный знак вместо логотипа (силуэт машины, как на иконке)
-const BRAND_MARK = `<svg class="brand-mark" viewBox="2 4 61 23" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+// знак рядом с названием (вместо логотипа): машина, ножницы, цветок или пульс — по нише
+const MARKS = {
+  car: `<svg class="brand-mark" viewBox="2 4 61 23" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
   <path d="M4 22 L4 18 Q4 15 8 14 L18 12 Q26 5 36 6 Q42 7 47 12 L58 15 Q61 16 61 19 L61 22 L54 22 A5 5 0 0 0 44 22 L22 22 A5 5 0 0 0 12 22 Z"/>
-  <path d="M21 12.4 Q27 8 35 8.4 Q40 9 43.5 12.2 Z" stroke-width="1.2"/><circle cx="49" cy="22" r="3.6"/><circle cx="17" cy="22" r="3.6"/></g></svg>`;
+  <path d="M21 12.4 Q27 8 35 8.4 Q40 9 43.5 12.2 Z" stroke-width="1.2"/><circle cx="49" cy="22" r="3.6"/><circle cx="17" cy="22" r="3.6"/></g></svg>`,
+  scissors: `<svg class="brand-mark" viewBox="0 0 48 30" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="9" cy="8" r="5"/><circle cx="9" cy="22" r="5"/><path d="M13 11 L45 25 M13 19 L45 5"/><circle cx="24" cy="15" r="1.2" fill="currentColor"/></g></svg>`,
+  flower: `<svg class="brand-mark" viewBox="0 0 48 30" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M24 3 C30 9 30 18 24 27 C18 18 18 9 24 3 Z"/><path d="M24 27 C16 25 9 19 7 10 C15 11 21 17 24 27 Z"/><path d="M24 27 C32 25 39 19 41 10 C33 11 27 17 24 27 Z"/></g></svg>`,
+  pulse: `<svg class="brand-mark" viewBox="0 0 48 30" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2 16 H13 L17 6 L23 26 L28 10 L31 16 H46"/></g></svg>`,
+};
+const BRAND_MARK = MARKS[CONFIG.brand.mark] || MARKS.car;
+
+// полоска демо-версии: быстрый вход клиентом или владельцем и сброс данных
+function demoBar() {
+  if (!CONFIG.demo) return '';
+  const who = state.owner ? 'owner' : state.user ? 'client' : '';
+  return `<div class="demo-bar glass"><span class="demo-tag">Демо</span>
+    <div class="demo-seg" role="group" aria-label="Посмотреть как"><button class="${who === 'client' ? 'on' : ''}" data-act="demo-as" data-id="client">Клиент</button><button class="${who === 'owner' ? 'on' : ''}" data-act="demo-as" data-id="owner">Владелец</button></div>
+    <button class="demo-reset" data-act="demo-reset" aria-label="Сбросить демо-данные" title="Сбросить демо-данные">↺</button></div>`;
+}
+
 function header() {
-  return `<div class="head"><div><h1 class="brand" aria-label="${CENTER.name}">${BRAND_MARK}<span>DETAILING</span></h1>
+  return `${demoBar()}<div class="head"><div><h1 class="brand" aria-label="${CENTER.name}">${BRAND_MARK}<span>${CONFIG.brand.word}</span></h1>
     ${state.tab === 'home' ? `<div class="addr">${ico('pin')}<a href="${CENTER.map}" target="_blank" rel="noopener">${CENTER.address}</a></div>` : ''}</div>
     ${state.user ? profileMenu() : '<button class="btn sm primary" data-act="login">Войти</button>'}</div>`;
 }
@@ -320,7 +352,7 @@ function slotsBlock(anim) {
   const dh = dayHours(state.day);
   if (!dh) {
     const shut = state.sched.closed.includes(state.day);
-    return `<div class="slots glass load-err"><p><b>${shut ? 'День закрыт для записи' : 'Выходной'}</b></p><p class="muted small">${shut ? 'Центр в этот день не принимает записи.' : 'В этот день центр не работает.'} Выберите другой день.</p></div>`;
+    return `<div class="slots glass load-err"><p><b>${shut ? 'День закрыт для записи' : 'Выходной'}</b></p><p class="muted small">${shut ? `${Place} в этот день не принимает записи.` : `В этот день ${PLACE} не работает.`} Выберите другой день.</p></div>`;
   }
   for (let h = dh.open; h < dh.close; h++) {
     const s = slotInfo(state.day, h);
@@ -345,7 +377,7 @@ function viewHome() {
 
   const nf = nextFree();
   const when = !state.loaded ? 'Загружаем расписание…' : state.loadError ? 'Нет связи с сервером' : nf ? `${dayName(nf.date)} · ${pad(nf.hour)}:00` : 'На две недели вперёд мест нет';
-  html += `<div class="hero glass" ${nf ? `data-act="hero" data-date="${nf.date}" data-h="${nf.hour}"` : 'data-act="book"'}>
+  html += `<div class="hero glass" style="--hero-img:url('${CONFIG.heroImg}')${CONFIG.heroPos ? `;--hero-pos:${CONFIG.heroPos}` : ''}" ${nf ? `data-act="hero" data-date="${nf.date}" data-h="${nf.hour}"` : 'data-act="book"'}>
     <div class="hero-text"><h2>Записаться сейчас</h2><p class="hero-label">Ближайшее свободное время</p><p class="hero-time">${when}</p>
     <span class="btn primary">Записаться</span></div></div>`;
 
@@ -415,6 +447,7 @@ function svcCards() {
   return list.map((s) => `<div class="card glass svc ${s.hidden ? 'is-hidden' : ''}">
     ${s.img ? `<div class="svc-img"><img src="${esc(s.img)}" alt="" loading="lazy" decoding="async"></div>` : ''}
     <div class="row" style="align-items:flex-start"><h3>${esc(s.name)}${s.hidden ? ' <span class="hidden-tag">скрыта</span>' : ''}</h3><span class="price">${priceLabel(s)}</span></div>
+    ${s.time ? `<p class="svc-time">${ico('clock')}${esc(s.time)}</p>` : ''}
     <p>${esc(s.desc)}</p>${state.owner ? `<div class="svc-tools"><button class="btn sm" data-act="svc-edit" data-id="${s.id}">Изменить</button>
       <button class="btn sm" data-act="svc-hide" data-id="${s.id}">${s.hidden ? 'Показать' : 'Скрыть'}</button>
       <button class="cancel-link" data-act="svc-del" data-id="${s.id}">Удалить</button></div>` : cartBtn(s.id)}</div>`).join('')
@@ -437,9 +470,9 @@ const STATUS = { wait: ['Ожидает подтверждения', 'wait'], ok
 // [полный текст, класс, короткий текст для таблицы]
 function bState(b) {
   if (b.noShow) return ['Неявка', 'off', 'Неявка'];
-  if (shutOut(b)) return ['Центр закрыт — нужен перенос', 'off', 'Нужен перенос'];
-  if (b.status === 'ok' && b.workStatus === 'in_work') return ['Машина в работе', 'work', 'В работе'];
-  if (b.status === 'ok' && b.workStatus === 'ready') return ['Готово — можно забирать', 'ready', 'Готово к выдаче'];
+  if (shutOut(b)) return [`${Place} ${closedWord} — нужен перенос`, 'off', 'Нужен перенос'];
+  if (b.status === 'ok' && b.workStatus === 'in_work') return [CONFIG.work.inWork, 'work', 'В работе'];
+  if (b.status === 'ok' && b.workStatus === 'ready') return [CONFIG.work.ready, 'ready', 'Готово к выдаче'];
   return [STATUS[b.status][0], STATUS[b.status][1], SHORT[b.status]];
 }
 function bStatusHtml(b) {
@@ -462,6 +495,16 @@ function extrasHtml(b) {
     ${b.photos?.length ? `<div class="thumbs">${b.photos.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Фото к записи" loading="lazy"></a>`).join('')}</div>` : ''}`;
 }
 
+// кнопка оплаты: в демо — имитация оплаты, иначе ссылка на платёжную страницу
+const payBtn = (b, extra = '') => (CONFIG.demo
+  ? `<button class="btn pay block" data-act="demo-pay" data-id="${b.id}">Оплатить ${money(b.total)}</button>`
+  : `<a class="btn pay block" href="${payUrl(b)}" target="_blank" rel="noopener" data-pay="${b.id}" ${extra}>Оплатить ${money(b.total)}</a>`);
+// строка «мастер» в карточках записи
+function masterLine(b) {
+  const m = masterById(b.master);
+  return m ? `<p class="meta">${ico('user')}${esc(CONFIG.masters.title)}: ${esc(m.name)}</p>` : '';
+}
+
 function bookingCard(b, history) {
   const cls = STATUS[b.status][1];
   const t = itemsOf(b);
@@ -470,7 +513,7 @@ function bookingCard(b, history) {
   const pay = b.refund === 'pending' ? `<div class="refund wait">Возврат ${money(b.total)}: ожидается<span class="dots"><i></i><i></i><i></i></span></div>`
     : b.refund === 'done' ? `<div class="refund ok">↩️ Деньги возвращены: ${money(b.total)}</div>`
     : b.paid ? '<div class="paid">✅ Заказ оплачен</div>'
-    : active && b.total > 0 ? `<a class="btn pay block" href="${payUrl(b)}" target="_blank" rel="noopener" data-pay="${b.id}">Оплатить ${money(b.total)}</a>` : '';
+    : active && b.total > 0 ? payBtn(b) : '';
   // пока машина в работе или готова, отменять и переносить уже нечего
   const shut = shutOut(b);
   const late = active && !shut && (tooLate(b) || !!b.workStatus);
@@ -479,8 +522,8 @@ function bookingCard(b, history) {
   const cal = active ? `<button class="move-link" data-act="ics" data-id="${b.id}">${ico('ticket')}В календарь</button>` : '';
   const foot = active ? `<div class="card-foot">${cal}${move}${cancel}</div>` : '';
   const lateNote = late && !b.workStatus ? `<p class="muted small late-note">До записи меньше ${state.sched.cancelHours} ${hoursWord(state.sched.cancelHours)} — отменить или перенести можно только по телефону ${CENTER.phone}.</p>` : '';
-  const ready = b.status === 'ok' && b.workStatus === 'ready' ? '<div class="work-plate">🚗 Машина готова — можно забирать</div>' : '';
-  const shutNote = shut ? `<div class="shut-plate">Центр не работает в это время. Перенесите запись или отмените её${b.paid ? ` — вернём ${money(b.total)}` : ''}.
+  const ready = b.status === 'ok' && b.workStatus === 'ready' ? `<div class="work-plate">${CONFIG.work.readyPlate}</div>` : '';
+  const shutNote = shut ? `<div class="shut-plate">${Place} не работает в это время. Перенесите запись или отмените её${b.paid ? ` — вернём ${money(b.total)}` : ''}.
     <button class="btn primary block" data-act="move" data-id="${b.id}">Выбрать другое время</button></div>` : '';
   const repeat = history ?`<button class="btn primary block" data-act="repeat" data-id="${b.id}" style="margin-top:12px">Повторить</button>` : '';
   return `<div class="card glass booking">
@@ -488,7 +531,7 @@ function bookingCard(b, history) {
     ${ready}${shutNote}
     <h3 style="margin-top:10px">${fmtDay(b.date)}, ${pad(b.hour)}:00</h3>
     <p class="meta">${ico('pin')}${CENTER.address}</p>
-    <p class="meta">${ico('car')}${esc(b.car)}</p>
+    ${CONFIG.car ? `<p class="meta">${ico('car')}${esc(b.car)}</p>` : ''}${masterLine(b)}
     ${extrasHtml(b)}
     <div class="lines">${lines}
       ${b.discount ? `<div class="row muted"><span>Скидка</span><span>−${money(b.discount)}</span></div>` : ''}
@@ -509,7 +552,7 @@ const installHidden = () => { try { return localStorage.getItem('gml_install_hid
 function installCard() {
   if (isStandalone() || !isMobile() || installHidden()) return '';
   return `<div class="card glass install"><button class="install-x" data-act="install-x" aria-label="Скрыть плашку"><span aria-hidden="true">×</span></button>
-    <img src="icon-car-192.png" alt="">
+    <img src="${CONFIG.icon}" alt="">
     <div class="install-text"><h3>Добавить сайт на главный экран</h3>
       <p class="muted small">Своя иконка на экране.<br>Быстрый доступ к сайту.</p></div>
     <button class="btn sm primary" data-act="install">Добавить</button></div>`;
@@ -551,7 +594,8 @@ function ownerList(filter = state.ownerFilter) {
     if (filter === 'week' && (b.date < today || b.date > weekEnd)) return false;
     if (filter === 'refund' && b.refund !== 'pending') return false;
     if (!q) return true;
-    return (b.userName || '').toLowerCase().includes(q) || (b.car || '').toLowerCase().includes(q) || (qd.length >= 3 && String(b.phone).includes(qd));
+    return (b.userName || '').toLowerCase().includes(q) || (b.car || '').toLowerCase().includes(q)
+      || (masterById(b.master)?.name || '').toLowerCase().includes(q) || (qd.length >= 3 && String(b.phone).includes(qd));
   });
 }
 function ownerTable() {
@@ -563,7 +607,7 @@ function ownerTable() {
     const d = parseDay(b.date);
     return `<tr data-act="owner-booking" data-id="${b.id}" class="${b.status === 'done' || b.status === 'cancelled' ? 'dim' : ''}">
       <td><b>${pad(d.getDate())}.${pad(d.getMonth() + 1)}</b> ${WD[d.getDay()]}<br><span class="muted">${pad(b.hour)}:00</span><i class="soon-dot" data-start="${startMs(b)}" ${b.status === 'wait' || b.status === 'ok' ? '' : 'data-off="1"'} hidden></i></td>
-      <td>${esc(b.userName || 'Клиент')}<br><span class="muted">${esc(b.car)}</span></td>
+      <td>${esc(b.userName || 'Клиент')}<br><span class="muted">${esc(CONFIG.car ? b.car : masterById(b.master)?.name || '')}</span></td>
       <td class="num">${money(b.total)}${b.refund === 'pending' ? '<br><span class="refund-mark">вернуть!</span>' : b.refund === 'done' ? '<br><span class="paid-mark">возвращено</span>' : b.paid ? '<br><span class="paid-mark">оплачено</span>' : ''}</td>
       <td><span class="status ${bState(b)[1]}">${bState(b)[2]}</span></td></tr>`;
   }).join('');
@@ -593,7 +637,7 @@ function viewOwner() {
       <div class="row" style="gap:8px"><button class="btn sm" data-act="export">Excel</button><button class="btn sm" data-act="sched">${ico('ticket')}График</button></div></div>
     ${refundBanner()}
     <div class="chips" id="ochips">${ownerChips()}</div>
-    <input type="text" id="osearch" placeholder="Поиск: имя, телефон или машина" value="${esc(state.ownerQuery)}" style="margin-bottom:12px">
+    <input type="text" id="osearch" placeholder="Поиск: имя, телефон${CONFIG.car ? ' или машина' : MASTERS.length ? ' или мастер' : ''}" value="${esc(state.ownerQuery)}" style="margin-bottom:12px">
     <div id="otable">${ownerTable()}</div>${installCard()}`;
 }
 
@@ -663,7 +707,9 @@ function statsView() {
     <h3 style="margin-bottom:10px">Популярные услуги</h3>
     <div class="card glass">${top.length ? bars(top, 'записей') : '<p class="muted small">Пока нет данных.</p>'}</div>
     <h3 style="margin:18px 0 10px">Загрузка по дням недели</h3>
-    <div class="card glass">${bars(wd, 'записей')}</div>`;
+    <div class="card glass">${bars(wd, 'записей')}</div>
+    ${MASTERS.length ? `<h3 style="margin:18px 0 10px">Записи по ${esc(CONFIG.masters.byWhom)}</h3>
+    <div class="card glass">${bars(MASTERS.map((m) => [m.name, counted.filter((b) => b.master === m.id).length]), 'записей')}</div>` : ''}`;
 }
 
 // ---------- владелец: выгрузка в Excel ----------
@@ -671,8 +717,10 @@ function statsView() {
 function exportCsv() {
   const list = ownerList().slice().sort((a, b) => (a.date + pad(a.hour)).localeCompare(b.date + pad(b.hour)));
   const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const head = ['№', 'Дата', 'Время', 'Клиент', 'Телефон', 'Автомобиль', 'Услуги', 'Сумма, ₽', 'Скидка, ₽', 'Статус', 'Оплата', 'Пожелания'];
-  const rows = list.map((b) => [b.id, b.date.split('-').reverse().join('.'), `${pad(b.hour)}:00`, b.userName, formatPhone(b.phone), b.car,
+  // колонка «Автомобиль» или «Мастер» — смотря по нише
+  const extra = CONFIG.car ? ['Автомобиль', (b) => b.car] : MASTERS.length ? [CONFIG.masters.title, (b) => masterById(b.master)?.name || ''] : null;
+  const head = ['№', 'Дата', 'Время', 'Клиент', 'Телефон', ...(extra ? [extra[0]] : []), 'Услуги', 'Сумма, ₽', 'Скидка, ₽', 'Статус', 'Оплата', 'Пожелания'];
+  const rows = list.map((b) => [b.id, b.date.split('-').reverse().join('.'), `${pad(b.hour)}:00`, b.userName, formatPhone(b.phone), ...(extra ? [extra[1](b)] : []),
     itemsOf(b).list.map((s) => s.name).join(', '), b.total, b.discount, bState(b)[0],
     b.refund === 'pending' ? 'нужен возврат' : b.refund === 'done' ? 'возвращено' : b.paid ? 'оплачено' : 'нет', b.comment]);
   const csv = '﻿' + [head, ...rows].map((r) => r.map(cell).join(';')).join('\r\n');
@@ -707,7 +755,9 @@ function schedSheet() {
   openSimple(`<h2>График работы</h2>
     <div class="card glass sched">${rows}</div>
     <div class="card glass">
-      <div class="row"><span>Боксов (машин в час)</span><select id="sched-cap" aria-label="Число боксов">${Array.from({ length: 10 }, (_, i) => `<option value="${i + 1}" ${i + 1 === g.capacity ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></div>
+      ${MASTERS.length
+        ? `<div class="row"><span>${esc(CONFIG.capacityLabel)}</span><b>${MASTERS.length}</b></div>`
+        : `<div class="row"><span>${esc(CONFIG.capacityLabel)}</span><select id="sched-cap" aria-label="${esc(CONFIG.capacityLabel)}">${Array.from({ length: 10 }, (_, i) => `<option value="${i + 1}" ${i + 1 === g.capacity ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></div>`}
       <div class="row" style="margin-top:10px"><span>Клиент отменяет онлайн не позже чем за</span><select id="sched-cancel" aria-label="Правило отмены">${[0, 1, 2, 3, 6, 12, 24, 48].map((h) => `<option value="${h}" ${h === (g.cancelHours ?? 3) ? 'selected' : ''}>${h ? `${h} ч` : 'в любое время'}</option>`).join('')}</select></div>
     </div>
     <div class="card glass">
@@ -740,7 +790,7 @@ function addToCalendar(b) {
     `UID:booking-${b.id}@detailing`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`,
     `DTSTART:${utc(b.hour)}`, `DTEND:${utc(b.hour + 1)}`,
     `SUMMARY:${icsEsc(CENTER.name + ': ' + names)}`, `LOCATION:${icsEsc(CENTER.address)}`,
-    `DESCRIPTION:${icsEsc(`Запись №${b.id}. ${names}. Итого: ${b.total} ₽. Автомобиль: ${b.car}`)}`,
+    `DESCRIPTION:${icsEsc(`Запись №${b.id}. ${names}. Итого: ${b.total} ₽.${CONFIG.car ? ` Автомобиль: ${b.car}.` : ''}${masterById(b.master) ? ` ${CONFIG.masters.title}: ${masterById(b.master).name}.` : ''}`)}`,
     'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Скоро запись: ' + CENTER.name, 'END:VALARM',
     'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
   const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
@@ -756,7 +806,7 @@ function askShut() {
   if (!state.user || state.owner || !$('#sheet').hidden) return;
   const b = state.bookings.find(shutOut);
   if (!b) return;
-  openSimple(`<h2>Центр не работает в день вашей записи</h2>
+  openSimple(`<h2>${Place} не работает в день вашей записи</h2>
     <p class="muted" style="margin:6px 0 14px">Запись на ${fmtDay(b.date)}, ${pad(b.hour)}:00. Перенесите её на другое время или отмените.${b.paid ? ` При отмене вернём ${money(b.total)}.` : ''}</p>
     <button class="btn primary block" data-act="move" data-id="${b.id}">Перенести</button>
     <div class="actions"><button class="btn" data-act="close">Позже</button><button class="btn danger" data-act="cancel" data-id="${b.id}">Отменить запись</button></div>`);
@@ -786,20 +836,23 @@ function ownerBookingSheet(id) {
   const noShows = state.bookings.filter((x) => x.noShow && phoneDigits(x.phone) === phoneDigits(b.phone)).length;
   const started = startMs(b) <= Date.now();
   const shut = shutOut(b);
-  // главная кнопка зависит от этапа: подтвердить → в работе → готово → выполнена
+  // главная кнопка зависит от этапа: подтвердить → в работе → готово → выполнена (без этапов работы — сразу «выполнена»)
+  const w = CONFIG.work;
   const main = b.status === 'wait' ? ['confirm', 'Подтвердить запись']
-    : !b.workStatus ? ['work', 'Машина в работе', 'in_work']
-    : b.workStatus === 'in_work' ? ['work', 'Готово, можно забирать', 'ready']
-    : ['confirm', 'Машину забрали — выполнена'];
+    : !w ? ['confirm', 'Отметить выполненной']
+    : !b.workStatus ? ['work', w.startBtn, 'in_work']
+    : b.workStatus === 'in_work' ? ['work', w.readyBtn, 'ready']
+    : ['confirm', w.doneBtn];
   openSimple(`<div class="row">${bStatusHtml(b)}<span class="muted small">№${b.id}</span></div>
     <h2 style="margin-top:12px">${fmtDay(b.date)}, ${pad(b.hour)}:00</h2>
     ${noShows ? `<p class="warn-note">⚠️ У клиента неявок: ${noShows}</p>` : ''}
-    ${shut ? '<p class="warn-note">⚠️ В это время центр закрыт. Клиент видит просьбу перенести или отменить запись. Можно позвонить ему или перенести самому.</p>' : ''}
+    ${shut ? `<p class="warn-note">⚠️ В это время ${PLACE} ${closedWord}. Клиент видит просьбу перенести или отменить запись. Можно позвонить ему или перенести самому.</p>` : ''}
     ${b.comment || b.photos?.length ? `<div class="card glass"><p class="muted small" style="margin-bottom:4px">Пожелания клиента</p>${extrasHtml(b)}</div>` : ''}
     <div class="card glass small">
       <div class="row"><span class="muted">Клиент</span><span>${esc(b.userName || '—')}</span></div>
       <div class="row"><span class="muted">Телефон</span><a href="tel:+7${phoneDigits(b.phone)}" style="color:var(--accent)">${esc(formatPhone(b.phone) || b.phone)}</a></div>
-      <div class="row"><span class="muted">Автомобиль</span><span>${esc(b.car)}</span></div>
+      ${CONFIG.car ? `<div class="row"><span class="muted">Автомобиль</span><span>${esc(b.car)}</span></div>` : ''}
+      ${masterById(b.master) ? `<div class="row"><span class="muted">${esc(CONFIG.masters.title)}</span><span>${esc(masterById(b.master).name)}</span></div>` : ''}
       <div class="row"><span class="muted">Оплата</span><span>${b.refund === 'pending' ? '<b class="refund-mark">нужно вернуть ' + money(b.total) + '</b>' : b.refund === 'done' ? 'деньги возвращены' : b.paid ? '✅ оплачено' : 'не оплачено'}</span></div>
     </div>
     <div class="card glass"><div class="lines" style="margin-top:0;border-top:0;padding-top:0">
@@ -837,7 +890,7 @@ function viewMine() {
 function openBooking(opts = {}) {
   renderSheet.prev = 1; renderSheet.last = null;
   const services = opts.services ? [...opts.services] : opts.service ? [opts.service] : [];
-  state.draft = { step: 1, services, date: opts.date || (dayHours(state.day) ? state.day : firstOpenDay()), hour: opts.hour ?? null, phone: opts.phone || state.user?.phone || '', car: opts.car || '', comment: '', files: [] };
+  state.draft = { step: 1, services, date: opts.date || (dayHours(state.day) ? state.day : firstOpenDay()), hour: opts.hour ?? null, master: opts.master || 0, phone: opts.phone || state.user?.phone || '', car: opts.car || '', comment: '', files: [] };
   state.draft.step = opts.step || (services.length ? 2 : 1);
   renderSheet();
   // свежая занятость: вдруг кто-то записался, пока страница была открыта
@@ -850,9 +903,8 @@ function hoursGrid(d, act = 'hour', skip = null) {
   const dh = dayHours(d.date);
   if (!dh) return '<p class="muted hours-note">Выходной — выберите другой день.</p>';
   return Array.from({ length: dh.close - dh.open }, (_, i) => dh.open + i).map((h) => {
-    const s = slotInfo(d.date, h);
-    if (s.past) return '';
-    const dis = s.free <= 0 || (skip && skip.date === d.date && skip.hour === h);
+    if (slotInfo(d.date, h).past) return '';
+    const dis = !freeAt(d.date, h, d.master, d.services) || (skip && skip.date === d.date && skip.hour === h);
     return `<button class="btn ${d.hour === h ? 'on' : ''}" ${dis ? 'disabled' : ''} data-act="${act}" data-h="${h}">${pad(h)}:00</button>`;
   }).join('');
 }
@@ -861,7 +913,7 @@ function hoursGrid(d, act = 'hour', skip = null) {
 function moveSheet(id) {
   const b = state.bookings.find((x) => x.id === id);
   const days = nextDays(14);
-  state.move = { id, date: days.includes(b.date) && dayHours(b.date) ? b.date : days.find((k) => dayHours(k)) || days[0], hour: null, from: { date: b.date, hour: b.hour } };
+  state.move = { id, date: days.includes(b.date) && dayHours(b.date) ? b.date : days.find((k) => dayHours(k)) || days[0], hour: null, from: { date: b.date, hour: b.hour }, master: b.master || 0, services: b.services };
   const m = state.move;
   openSimple(`<h2>Перенос записи</h2>
     <p class="muted" style="margin-bottom:12px">Сейчас: ${fmtDay(b.date)}, ${pad(b.hour)}:00.${state.owner ? '' : ' После переноса запись снова подтвердит владелец.'}</p>
@@ -880,31 +932,34 @@ function renderSheet() {
 
   if (d.step === 1) {
     body = `<h2>1. Выберите услуги</h2>` + state.services.map((s) => `<div class="pick glass ${d.services.includes(s.id) ? 'on' : ''}" data-act="pick" data-id="${s.id}">
-      <div class="chk">${d.services.includes(s.id) ? '✓' : ''}</div><div style="flex:1"><b>${esc(s.name)}</b></div><span class="price small">${priceLabel(s)}</span></div>`).join('');
+      <div class="chk">${d.services.includes(s.id) ? '✓' : ''}</div><div style="flex:1"><b>${esc(s.name)}</b>${s.time ? `<span class="pick-time">${esc(s.time)}</span>` : ''}</div><span class="price small">${priceLabel(s)}</span></div>`).join('');
     ok = d.services.length > 0;
   } else if (d.step === 2) {
+    // выбранный мастер больше не подходит к услугам или время уже занято — сбрасываем выбор
+    if (d.master && !mastersFor(d.services).some((m) => m.id === d.master)) d.master = 0;
+    if (d.hour !== null && !freeAt(d.date, d.hour, d.master, d.services)) d.hour = null;
     const hours = hoursGrid(d);
-    body = `<h2>2. Дата и время</h2><div class="dates">${nextDays(14).map((k) => {
+    body = `<h2>2. ${MASTERS.length ? `${esc(CONFIG.masters.title)}, дата и время` : 'Дата и время'}</h2>${mastersPicker(d)}<div class="dates">${nextDays(14).map((k) => {
       const dt = parseDay(k);
       return `<button class="date ${k === d.date ? 'on' : ''} ${dayHours(k) ? '' : 'off'}" data-act="sdate" data-id="${k}" ${dayHours(k) ? '' : 'disabled'}><span>${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></button>`;
     }).join('')}</div><div class="hours">${hours}</div>`;
     ok = d.hour !== null;
   } else if (d.step === 3) {
-    body = `<h2>3. Контакты и автомобиль</h2>
+    body = `<h2>3. ${CONFIG.car ? 'Контакты и автомобиль' : 'Контакты'}</h2>
       <label class="field"><span>Номер телефона</span><input type="tel" inputmode="tel" maxlength="18" id="f-phone" placeholder="+7 (900) 000-00-00" value="${esc(formatPhone(d.phone))}"></label>
-      <div id="garage">${garageChips()}</div>
-      <label class="field"><span>Марка и модель автомобиля</span><input type="text" id="f-car" placeholder="Например, Toyota Camry" value="${esc(d.car)}"></label>
-      <label class="field"><span>Пожелания <span class="opt">необязательно</span></span><textarea id="f-comment" rows="2" maxlength="500" placeholder="Например: запах в салоне, скол на капоте">${esc(d.comment || '')}</textarea></label>
-      <div class="field"><span class="flabel">Фото повреждений <span class="opt">до 3, необязательно</span></span>
+      ${CONFIG.car ? `<div id="garage">${garageChips()}</div>
+      <label class="field"><span>Марка и модель автомобиля</span><input type="text" id="f-car" placeholder="Например, Toyota Camry" value="${esc(d.car)}"></label>` : ''}
+      <label class="field"><span>Пожелания <span class="opt">необязательно</span></span><textarea id="f-comment" rows="2" maxlength="500" placeholder="${esc(CONFIG.commentHint)}">${esc(d.comment || '')}</textarea></label>
+      ${CONFIG.photos ? `<div class="field"><span class="flabel">${esc(CONFIG.photos)} <span class="opt">до 3, необязательно</span></span>
         <div class="thumbs" id="f-thumbs">${draftThumbs(d)}</div>
-        <label class="btn sm file-btn">${ico('car')}Добавить фото<input type="file" id="f-photos" accept="image/*" multiple hidden></label></div>`;
+        <label class="btn sm file-btn">${ico('photo')}Добавить фото<input type="file" id="f-photos" accept="image/*" multiple hidden></label></div>` : ''}`;
   } else {
     const t = totals(d.services);
     body = `<h2>4. Проверьте запись</h2><div class="card glass">
       ${t.list.map((s) => `<div class="row" style="padding:3px 0"><span>${esc(s.name)}</span><span>${s.price === null ? 'по телефону' : money(s.price)}</span></div>`).join('')}
       <div class="lines">${t.discount ? `<div class="row muted"><span>Скидка ${state.promo.percent}%</span><span>−${money(t.discount)}</span></div>` : ''}
       <div class="row total"><span>Итого</span><span>${money(t.total)}${t.unknown ? ' + по телефону' : ''}</span></div></div></div>
-      <div class="card glass summary"><p class="meta">${ico('ticket')}${fmtDay(d.date)}, ${pad(d.hour)}:00</p><p class="meta">${ico('car')}${esc(d.car)}</p><p class="meta">${ico('phone')}${esc(formatPhone(d.phone))}</p><p class="meta">${ico('pin')}${CENTER.address}</p>
+      <div class="card glass summary"><p class="meta">${ico('ticket')}${fmtDay(d.date)}, ${pad(d.hour)}:00</p>${MASTERS.length ? `<p class="meta">${ico('user')}${esc(CONFIG.masters.title)}: ${esc(masterById(d.master)?.name || CONFIG.masters.any.toLowerCase())}</p>` : ''}${CONFIG.car ? `<p class="meta">${ico('car')}${esc(d.car)}</p>` : ''}<p class="meta">${ico('phone')}${esc(formatPhone(d.phone))}</p><p class="meta">${ico('pin')}${CENTER.address}</p>
         ${d.comment ? `<p class="comment">«${esc(d.comment)}»</p>` : ''}${d.files?.length ? `<p class="meta">Фото: ${d.files.length}</p>` : ''}</div>
       ${state.sched.cancelHours ? `<p class="muted small">Отменить или перенести запись онлайн можно не позже чем за ${state.sched.cancelHours} ${hoursWord(state.sched.cancelHours)} до начала.</p>` : ''}`;
     next = 'Записаться';
@@ -927,6 +982,14 @@ function renderSheet() {
   }
 }
 
+// выбор мастера: «любой» и те, кто делает выбранные услуги
+function mastersPicker(d) {
+  if (!MASTERS.length) return '';
+  if (!mastersFor(d.services).length) return `<p class="demo-hint">Эти услуги делают разные ${esc(CONFIG.masters.whoPlural)} — мы подберём их на выбранное время.</p>`;
+  const any =`<button class="master ${!d.master ? 'on' : ''}" data-act="smaster" data-id="0"><span class="avatar sm any-av" aria-hidden="true">${ICONS.user}</span><span><b>${esc(CONFIG.masters.any)}</b><small>ближайшее время</small></span></button>`;
+  return `<div class="masters">${any}${mastersFor(d.services).map((m) => `<button class="master ${d.master === m.id ? 'on' : ''}" data-act="smaster" data-id="${m.id}">${avatarHtml(m.name, m.color, 'sm')}<span><b>${esc(m.name)}</b><small>${esc(m.role)}</small></span></button>`).join('')}</div>`;
+}
+
 // «мой гараж»: сохранённые машины кнопками над полем
 function garageChips() {
   if (!state.cars.length) return '';
@@ -938,9 +1001,9 @@ function draftThumbs(d) {
 function nextStep() {
   const d = state.draft;
   if (d.step === 3) {
-    d.phone = $('#f-phone').value.trim(); d.car = $('#f-car').value.trim(); d.comment = $('#f-comment').value.trim();
+    d.phone = $('#f-phone').value.trim(); d.car = CONFIG.car ? $('#f-car').value.trim() : ''; d.comment = $('#f-comment').value.trim();
     if (phoneDigits(d.phone).length < 10) return fieldError('f-phone', 'Введите номер полностью: 10 цифр после +7');
-    if (d.car.length < 2) return fieldError('f-car', 'Укажите марку и модель автомобиля');
+    if (CONFIG.car && d.car.length < 2) return fieldError('f-car', 'Укажите марку и модель автомобиля');
   }
   if (d.step === 4) return confirmBooking();
   d.step++; renderSheet();
@@ -955,9 +1018,9 @@ async function confirmBooking() {
   try {
     const items = t.list.map((s) => ({ id: s.id, name: s.name, price: s.price }));
     const photos = d.files?.length ? await api.uploadPhotos(d.files, state.user.id) : [];
-    const created = await api.addBooking({ userName: state.user.name, phone: phoneDigits(d.phone), car: d.car, services: d.services, items, date: d.date, hour: d.hour, discount: t.discount, total: t.total, comment: d.comment, photos });
+    const created = await api.addBooking({ userName: state.user.name, phone: phoneDigits(d.phone), car: d.car, services: d.services, items, date: d.date, hour: d.hour, discount: t.discount, total: t.total, comment: d.comment, photos, master: d.master || null });
     // машину — в «мой гараж», чтобы в следующий раз выбрать одним нажатием
-    if (!state.cars.some((c) => c.title.toLowerCase() === d.car.toLowerCase())) api.addCar(d.car).then(() => api.cars()).then((c) => { state.cars = c; }).catch(() => {});
+    if (CONFIG.car && !state.cars.some((c) => c.title.toLowerCase() === d.car.toLowerCase())) api.addCar(d.car).then(() => api.cars()).then((c) => { state.cars = c; }).catch(() => {});
     state.bookings.push(created);
     state.cart = []; updateCart();
     closeSheet();
@@ -965,6 +1028,7 @@ async function confirmBooking() {
     state.tab = 'mine';
     render(); window.scrollTo(0, 0);
     if (created.total > 0) paySheet(created); else toast('Запись создана');
+    if (CONFIG.demo) setTimeout(() => toast('Владельцу пришло уведомление в Telegram'), 900);
   } catch (e) {
     toast(errText(e));
     if (/slot_full/.test(e.message)) { await refreshCounts().catch(() => {}); d.step = 2; d.hour = null; renderSheet(); }
@@ -979,7 +1043,7 @@ function paySheet(b) {
   sheet.hidden = false;
   sheet.innerHTML = `<div class="panel glass"><div class="step-body to-next"><h2>Запись создана</h2>
     <p class="muted" style="margin-bottom:14px">${fmtDay(b.date)}, ${pad(b.hour)}:00. Оплатить можно сейчас онлайн или позже, в разделе «Моя запись».</p>
-    <a class="btn pay block" href="${payUrl(b)}" target="_blank" rel="noopener" data-pay="${b.id}" data-act="close">Оплатить ${money(b.total)}</a>
+    ${payBtn(b, 'data-act="close"')}
     <button class="btn block" data-act="ics" data-id="${b.id}" style="margin-top:10px">${ico('ticket')}Добавить в календарь</button>
     <div class="actions"><button class="btn" data-act="close">Оплатить позже</button></div></div></div>`;
 }
@@ -993,6 +1057,7 @@ function authSheet(mode) {
   sheet.hidden = false;
   sheet.innerHTML = `<div class="panel glass"><div class="step-body to-next"><h2>${reg ? 'Регистрация' : 'Вход'}</h2>
     <p class="muted small" style="margin-bottom:14px">${reg ? 'Создайте аккаунт, чтобы записываться и оставлять отзывы.' : 'Войдите в свой аккаунт.'}</p>
+    ${CONFIG.demo ? '<p class="demo-hint">Это демо: подойдёт любой номер и пароль от 6 символов. Быстрый вход — кнопки «Клиент» и «Владелец» вверху страницы.</p>' : ''}
     ${reg ? '<label class="field"><span>Имя</span><input type="text" id="a-name" placeholder="Как к вам обращаться"></label>' : ''}
     <label class="field"><span>Телефон</span><input type="tel" inputmode="tel" maxlength="18" id="a-phone" placeholder="+7 (900) 000-00-00"></label>
     <label class="field"><span>Пароль</span><input type="password" id="a-pass" placeholder="Не короче 6 символов" autocomplete="${reg ? 'new-password' : 'current-password'}"></label>
@@ -1063,7 +1128,29 @@ document.addEventListener('click', (e) => {
       const od = $('#owner-day'); if (od) od.innerHTML = ownerDayBar();
     },
     slot: () => openBooking({ date: state.day, hour: Number(el.dataset.h) }),
-    repeat: () => { const b = findB(); openBooking({ services: b.services, car: b.car, phone: b.phone }); },
+    repeat: () => { const b = findB(); openBooking({ services: b.services, car: b.car, phone: b.phone, master: b.master }); },
+    smaster: () => {
+      d.master = Number(id);
+      if (d.hour !== null && !freeAt(d.date, d.hour, d.master, d.services)) d.hour = null;
+      renderSheet();
+    },
+    'demo-as': () => withBusy(el, async () => {
+      if ((id === 'owner') === state.owner && state.user) return;
+      const u = await api.demoLogin(id);
+      if (id === 'owner') state.tab = 'mine';
+      await afterAuth(u, id === 'owner' ? 'Вы вошли как владелец' : 'Вы вошли как клиент');
+    }),
+    'demo-reset': () => {
+      if (!confirm('Вернуть демо-версию к исходному виду? Все изменения сбросятся.')) return;
+      api.demoReset(); location.reload();
+    },
+    'demo-pay': () => {
+      const b = findB();
+      openSimple(`<h2>Оплата</h2>
+        <p class="muted" style="margin-bottom:14px">В рабочей версии здесь открывается оплата картой или по СБП (ЮKassa). В демо оплата имитируется — деньги не списываются.</p>
+        <button class="btn pay block" data-act="paid" data-id="${b.id}">Оплатить ${money(b.total)}</button>
+        <div class="actions"><button class="btn" data-act="close">Отмена</button></div>`);
+    },
     hero: () => openBooking({ date: el.dataset.date, hour: Number(el.dataset.h) }),
     book: () => openBooking({ service: id ? Number(id) : null }),
     close: () => { state.pendingDraft = null; closeSheet(); },
@@ -1120,7 +1207,7 @@ document.addEventListener('click', (e) => {
       const b = findB(), ws = el.dataset.ws;
       await api.setWork(b.id, ws);
       b.workStatus = ws; closeSheet(); render();
-      toast(ws === 'ready' ? 'Клиент увидит: «Машина готова — можно забирать»' : 'Статус: машина в работе');
+      toast(ws === 'ready' ? `Клиент увидит: «${CONFIG.work.readyPlate.replace(/^\S+\s/, '')}»` : `Статус: ${CONFIG.work.inWork.toLowerCase()}`);
     }),
     noshow: () => {
       if (!confirm('Отметить, что клиент не пришёл? Запись будет закрыта, у клиента появится отметка о неявке.')) return;
@@ -1405,7 +1492,7 @@ function serviceSheet(id) {
   openSimple(`<h2>${id ? 'Изменить услугу' : 'Новая услуга'}</h2>
     <div class="svc-img" id="s-preview" style="${s.img ? `background-image:url('${esc(s.img)}')` : ''}">${s.img ? '' : '<span>Нет фото</span>'}</div>
     <label class="btn sm file-btn">Выбрать фото<input type="file" id="s-file" accept="image/*" hidden></label>
-    <label class="field mt"><span>Название</span><input type="text" id="s-name" value="${esc(s.name)}" placeholder="Например, Мойка кузова"></label>
+    <label class="field mt"><span>Название</span><input type="text" id="s-name" value="${esc(s.name)}" placeholder="Например, ${esc(CONFIG.serviceExample)}"></label>
     <label class="field"><span>Цена, ₽ (пусто — «по телефону»)</span><input type="text" inputmode="numeric" id="s-price" value="${s.price ?? ''}" placeholder="по телефону"></label>
     <label class="field"><span>Описание</span><textarea id="s-desc" rows="4" placeholder="Что входит в услугу">${esc(s.desc)}</textarea></label>
     <div class="actions"><button class="btn" data-act="close">Закрыть</button><button class="btn primary" data-act="svc-save" data-id="${id || ''}">Сохранить</button></div>

@@ -1,0 +1,26 @@
+{
+  "name": "LUMI — студия красоты (демо)",
+  "short_name": "LUMI",
+  "description": "Демо: онлайн-запись в студию красоты",
+  "lang": "ru",
+  "start_url": "salon.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5eee9",
+  "theme_color": "#f5eee9",
+  "icons": [
+    {
+      "src": "icon-salon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-salon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

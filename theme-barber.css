@@ -1,0 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&display=swap');
+/* Тема «барбершоп»: тёмная и тёплая — графит, кожа, латунь. Подключается после styles.css. */
+:root {
+  --bg: #0f0c0a;
+  --bg-top: #19130f;
+  --text: #f5eee5;
+  --text-2: #cbbdab;
+  --text-3: #9d8e7c;
+  --silver: #d4af6a;
+  --tint: 255, 240, 220;
+  --focus: rgba(240, 212, 154, 0.85);
+  --dim: rgba(8, 6, 4, 0.66);
+
+  --accent-ink: #1a1208;
+  --accent-fill: linear-gradient(160deg, #f1d59b, #c9a05a 55%, #e3c27f);
+  --accent-fill-2: linear-gradient(160deg, #efd197, #c9a05a);
+  --accent-shadow: inset 0 0 8px rgba(255, 240, 210, 0.45), 0 6px 18px rgba(0, 0, 0, 0.4);
+  --sel: linear-gradient(160deg, rgba(222, 186, 118, 0.9), rgba(150, 112, 54, 0.75));
+  --sel-soft: linear-gradient(160deg, rgba(222, 186, 118, 0.75), rgba(150, 112, 54, 0.6));
+  --sel-border: rgba(240, 212, 154, 0.6);
+  --sel-ink: #1a1208;
+
+  --btn-fill: linear-gradient(160deg, rgba(62, 49, 38, 0.65), rgba(28, 22, 17, 0.55));
+  --date-fill: linear-gradient(160deg, rgba(72, 58, 45, 0.8), rgba(32, 26, 20, 0.8));
+  --date-inset: inset 0 1px 0 rgba(255, 236, 205, 0.22);
+  --float-fill: linear-gradient(160deg, rgba(74, 58, 44, 0.66), rgba(22, 17, 13, 0.9));
+  --menu-fill: linear-gradient(160deg, rgba(74, 58, 44, 0.82), rgba(22, 17, 13, 0.95));
+  --tabbar-fill: linear-gradient(145deg, rgba(54, 43, 34, 0.76), rgba(20, 16, 12, 0.82));
+  --tab-ind-fill: linear-gradient(160deg, rgba(240, 212, 154, 0.3), rgba(240, 212, 154, 0.08));
+  --toast-fill: rgba(46, 37, 29, 0.96);
+  --toast-ink: #f5eee5;
+  --pick-fill: #0a0806;
+  --pick-ring: linear-gradient(135deg, rgba(240, 212, 154, 0.85), rgba(240, 212, 154, 0.35));
+  --x-fill: #3a2f25;
+  --logo-bg: #0f0c0a;
+  --brand-ink: linear-gradient(180deg, #f6e2b5, #c9a05a);
+  --brand-mark: #d4af6a;
+
+  --hero-fill: linear-gradient(160deg, #2c241c, #120e0b);
+  --hero-shade: 14, 10, 7;
+
+  --glass-fill: linear-gradient(145deg, rgba(255, 236, 210, 0.13), rgba(255, 236, 210, 0.035) 55%, rgba(255, 236, 210, 0.07));
+  --ring: linear-gradient(135deg, rgba(240, 212, 154, 0.38), rgba(255, 236, 210, 0.07) 35%, rgba(255, 236, 210, 0.05) 65%, rgba(240, 212, 154, 0.22));
+}
+
+/* узкий рубленый шрифт для названия и заголовков */
+.brand, h2, .hero-text h2, .tile b { font-family: 'Oswald', 'Arial Narrow', sans-serif; }
+.brand { font-size: 26px; font-weight: 600; letter-spacing: 0.24em; }
+h2 { font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.hero-text h2 { font-size: 30px; letter-spacing: 0.03em; }

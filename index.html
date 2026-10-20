@@ -5,32 +5,79 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0c0d10">
 <meta name="color-scheme" content="dark">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Детейлинг">
-<title>Детейлинг-центр — онлайн-запись</title>
-<link rel="manifest" href="manifest.json">
+<meta name="description" content="Сайт с онлайн-записью, который работает как приложение: салон красоты, барбершоп, фитнес-студия, детейлинг. Посмотрите демо-версии.">
+<title>Онлайн-запись — демо-версии</title>
 <link rel="icon" href="icon-car-192.png">
-<link rel="apple-touch-icon" href="icon-car-180.png">
-<link rel="stylesheet" href="styles.css?v=20261010154030">
+<link rel="stylesheet" href="styles.css?v=20261020163112">
+<style>
+  /* главная страница с демо-версиями: те же токены и стекло, что у сайтов */
+  .intro { padding: 8px 0 22px; }
+  .intro h1 { font-size: 30px; line-height: 1.15; letter-spacing: -0.02em; }
+  .intro p { margin-top: 10px; color: var(--text-2); font-size: 17px; }
+  .demos { display: grid; gap: 12px; }
+  .demo {
+    position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-height: 190px; padding: 18px;
+    overflow: hidden; color: #fff; text-decoration: none; border-radius: var(--r-card);
+    transition: transform var(--fast) var(--spring);
+  }
+  .demo:active { transform: scale(0.98); }
+  .demo::after { content: ""; position: absolute; inset: 0; z-index: 0; background: var(--img) center / cover no-repeat; }
+  .demo::before { z-index: 2; }
+  .demo > * { position: relative; z-index: 1; }
+  .demo .shade { position: absolute; inset: 0; z-index: 1; background: linear-gradient(0deg, rgba(8, 9, 12, 0.92) 0%, rgba(8, 9, 12, 0.45) 55%, rgba(8, 9, 12, 0.1) 100%); }
+  .demo .kind { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255, 255, 255, 0.75); }
+  .demo h2 { margin: 4px 0 2px; font-size: 24px; }
+  .demo .go { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; font-weight: 700; color: var(--a, #fff); }
+  .demo .go svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .how { margin-top: 18px; }
+  .how b { color: var(--text); }
+  .feat { margin: 26px 0 0; display: grid; gap: 12px; }
+  .feat h2 { margin: 0 0 8px; }
+  .feat ul { margin: 0; padding-left: 20px; color: var(--text-2); line-height: 1.6; }
+  .feat li + li { margin-top: 4px; }
+  .outro { margin: 26px 0 8px; text-align: center; color: var(--text-2); }
+  .outro b { display: block; font-size: 19px; color: var(--text); margin-bottom: 4px; }
+  #app { padding-bottom: calc(40px + env(safe-area-inset-bottom)); }
+  @media (min-width: 760px) {
+    #app { max-width: 900px; }
+    .demos { grid-template-columns: 1fr 1fr; }
+    .feat { grid-template-columns: 1fr 1fr; }
+  }
+</style>
 </head>
-<body data-tab="home">
+<body>
 <div class="bg"></div>
-<div id="app"><div id="view"></div></div>
-<nav id="tabs" class="tabbar glass"></nav>
-<button id="cart" class="cart-fab glass" data-act="cart" aria-label="Корзина" hidden>
-<svg viewBox="0 0 24 24"><path d="M3 4h2.5l2 11h10.5l2-8H6.5"/><circle cx="9" cy="19.5" r="1.4"/><circle cx="17" cy="19.5" r="1.4"/></svg>
-<span class="badge">0</span>
-</button>
-<div id="sheet" class="sheet" hidden></div>
-<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-<script src="supabase.js"></script>
-<script src="api.js?v=20261010154030"></script>
-<script src="app.js?v=20261010154030"></script>
-<script>
-// офлайн-режим и установка на телефон (работает по https или на localhost)
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-</script>
+<main id="app">
+  <section class="intro">
+    <h1>Онлайн-запись для вашего бизнеса</h1>
+    <p>Сайт, который работает как приложение: клиенты сами выбирают услугу и свободное время, а вам приходит уведомление в Telegram.</p>
+  </section>
+
+  <div class="demos">
+    <a class="demo glass" href="salon.html" style="--img:url('salon-hero.jpg');--a:#f0c3ca"><span class="shade"></span><span class="kind">Студия красоты</span><h2>LUMI</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Маникюр, брови, ресницы · выбор мастера</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+    <a class="demo glass" href="barber.html" style="--img:url('barber-hero.jpg');--a:#e8c886"><span class="shade"></span><span class="kind">Барбершоп</span><h2>BASTION</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Стрижки и борода · выбор барбера</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+    <a class="demo glass" href="fitness.html" style="--img:url('fit-hero.jpg');--a:#d7ff5c"><span class="shade"></span><span class="kind">Фитнес-студия</span><h2>PULSE</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Персональные тренировки · выбор тренера</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+    <a class="demo glass" href="detailing.html" style="--img:url('hero.jpg?v=2');--a:#e6e9ee"><span class="shade"></span><span class="kind">Детейлинг-центр</span><h2>DETAILING</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Боксы, статус машины, фото повреждений</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+  </div>
+
+  <p class="muted small how">В каждой демо-версии вверху есть кнопки <b>«Клиент»</b> и <b>«Владелец»</b> — посмотрите обе стороны. Данные выдуманные, можно смело нажимать всё.</p>
+
+  <section class="feat">
+    <div class="card glass"><h2>Для клиента</h2><ul>
+      <li>Услуги и цены, свободное время в календаре</li>
+      <li>Запись за минуту, выбор мастера</li>
+      <li>Перенос и отмена, история, повтор записи</li>
+      <li>Добавляется на экран телефона как приложение</li>
+    </ul></div>
+    <div class="card glass"><h2>Для владельца</h2><ul>
+      <li>Уведомление о каждой записи в Telegram</li>
+      <li>Таблица записей, база клиентов, неявки</li>
+      <li>Статистика: выручка, средний чек, загрузка мастеров</li>
+      <li>График работы, выходные, акции, выгрузка в Excel</li>
+    </ul></div>
+  </section>
+
+  <p class="outro"><b>Хотите такой же?</b>Сделаю под ваш бренд, услуги и цены — без ежемесячной платы за сервис.</p>
+</main>
 </body>
 </html>

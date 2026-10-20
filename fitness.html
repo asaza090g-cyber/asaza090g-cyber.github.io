@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#090a0c">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PULSE">
+<title>PULSE — демо онлайн-записи в фитнес-студию</title>
+<link rel="manifest" href="manifest-fitness.json">
+<link rel="icon" href="icon-fitness-192.png">
+<link rel="apple-touch-icon" href="icon-fitness-180.png">
+<link rel="stylesheet" href="styles.css?v=20261020163112">
+<link rel="stylesheet" href="theme-fitness.css?v=20261020163112">
+</head>
+<body data-tab="home">
+<div class="bg"></div>
+<div id="app"><div id="view"></div></div>
+<nav id="tabs" class="tabbar glass"></nav>
+<button id="cart" class="cart-fab glass" data-act="cart" aria-label="Корзина" hidden>
+<svg viewBox="0 0 24 24"><path d="M3 4h2.5l2 11h10.5l2-8H6.5"/><circle cx="9" cy="19.5" r="1.4"/><circle cx="17" cy="19.5" r="1.4"/></svg>
+<span class="badge">0</span>
+</button>
+<div id="sheet" class="sheet" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script src="config-fitness.js?v=20261020163112"></script>
+<script>CONFIG.demo = true; // демо-версия: выдуманные данные хранятся в браузере</script>
+<script src="api-demo.js?v=20261020163112"></script>
+<script src="app.js?v=20261020163112"></script>
+<script>
+// офлайн-режим и установка на телефон (работает по https или на localhost)
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
