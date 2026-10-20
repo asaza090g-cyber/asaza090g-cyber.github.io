@@ -199,7 +199,7 @@ function itemsOf(b) {
   const list = b.items || b.services.map((id) => state.services.find((s) => s.id === id) || { name: 'Услуга', price: null });
   return { list, unknown: list.some((s) => s.price === null) };
 }
-const priceLabel = (s) => (s.price === null ? 'по телефону' : s.price === 0 ? 'бесплатно' : 'от ' + money(s.price));
+const priceLabel = (s) => s.priceText || (s.price === null ? 'по телефону' : s.price === 0 ? 'бесплатно' : 'от ' + money(s.price));
 
 // ---------- экраны ----------
 const ICONS = {

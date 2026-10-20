@@ -19,7 +19,7 @@ function errText(e) {
 }
 
 const api = (() => {
-  const DEMO_KEY = 'demo-' + CONFIG.id + '-v5';
+  const DEMO_KEY = 'demo-' + CONFIG.id + '-v6';
   const DM = CONFIG.masters?.list || [];
   const OWNER = { id: 'owner', name: 'Владелец', phone: '9000000000', isOwner: true, color: null };
   const ME = { id: 'client', name: CONFIG.demoData.me, phone: '9001234567', isOwner: false, color: null };
@@ -93,6 +93,8 @@ const api = (() => {
       return make(date, c.hour, ids, who, { ...extra, classId: c.id, master: c.master });
     }
     const single = services.filter((s) => !s.group), group = services.filter((s) => s.group);
+    // выбор с учётом веса услуги: посещений по абонементу больше, чем покупок абонементов
+    const pickW = (list) => { let x = r() * list.reduce((t, sv) => t + (sv.weight || 1), 0); return list.find((sv) => (x -= sv.weight || 1) < 0) || list[0]; };
     const randomServices = () => {
       const ids = [pick(single).id];
       if (!CLASSES.length && r() < 0.25) { const second = pick(single).id; if (second !== ids[0]) ids.push(second); }
@@ -130,7 +132,7 @@ const api = (() => {
       for (const c of CLASSES.filter((x) => x.day === day.getDay())) {
         const want = Math.round(c.places * (n < 0 ? 0.55 + r() * 0.4 : Math.max(0.15, 0.7 - n * 0.06 + r() * 0.2)));
         for (let k = 0; k < want; k++) {
-          const ids = [r() < 0.2 ? group[0].id : pick(group).id];
+          const ids = [pickW(group).id];
           putClass(date, c, ids, pick(clients), status(n, c.hour));
         }
       }
