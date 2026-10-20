@@ -169,15 +169,21 @@ function mastersFor(ids) {
     return !s?.masters || s.masters.includes(m.id);
   }));
 }
-// можно ли записаться: есть общее место и, если есть мастера, свободен выбранный (или любой подходящий)
+// сколько часов подряд занимает запись: по самой длинной из выбранных услуг (аренда на 2–3 часа)
+const durOf = (ids) => Math.max(1, ...ids.map((id) => state.services.find((s) => s.id === id)?.hours || 1));
+const timeOf = (hour, dur = 1) => (dur > 1 ? `${pad(hour)}:00–${pad(hour + dur)}:00` : `${pad(hour)}:00`);
+// мастера, занятые в этот час: записями и (у танцев) своими группами по расписанию
+const teachingAt = (date, h) => (CONFIG.classes || []).filter((c) => c.day === parseDay(date).getDay() && c.hour === h).map((c) => c.master);
+const busyMasters = (date, h) => [...(state.counts[date + '|' + h]?.masters || []), ...teachingAt(date, h)];
+// можно ли записаться: на все часы записи есть общее место и, если есть мастера, свободен выбранный (или любой подходящий)
 function freeAt(date, h, master, ids) {
-  const s = slotInfo(date, h);
-  if (s.past || s.free <= 0) return false;
+  const n = durOf(ids), dh = dayHours(date);
+  if (!dh || h + n > dh.close) return false;
+  for (let i = 0; i < n; i++) { const s = slotInfo(date, h + i); if (s.past || s.free <= 0) return false; }
   if (!MASTERS.length) return true;
-  const busy = state.counts[date + '|' + h]?.masters || [];
   const cand = master ? [master] : mastersFor(ids).map((m) => m.id);
   if (!cand.length) return true; // услуги делают разные мастера — хватает общего свободного места
-  return cand.some((id) => !busy.includes(id));
+  return cand.some((id) => Array.from({ length: n }, (_, i) => h + i).every((x) => !busyMasters(date, x).includes(id)));
 }
 
 // ---------- расчёт цены ----------
@@ -226,6 +232,23 @@ function render(dir) {
     v.classList.add(dir > 0 ? 'in-right' : 'in-left');
   }
 }
+
+// ---------- группы по расписанию (танцы, йога): занятие в определённое время с лимитом мест ----------
+const CLASSES = CONFIG.classes || [];
+const classById = (id) => CLASSES.find((c) => c.id === id);
+const classesOn = (date) => CLASSES.filter((c) => c.day === parseDay(date).getDay()).sort((a, b) => a.hour - b.hour);
+const groupSvc = (id) => !!state.services.find((s) => s.id === id)?.group;
+const isGroup = (ids) => ids.some(groupSvc);
+const takenIn = (date, c) => state.counts[date + '|' + c.hour]?.cls?.[c.id] || 0;
+const classPast = (date, c) => { const n = new Date(); return date < dayKey(n) || (date === dayKey(n) && c.hour <= n.getHours()); };
+const classFree = (date, c) => !classPast(date, c) && dayHours(date) && takenIn(date, c) < c.places;
+// ближайшая группа со свободными местами — для плашки «Записаться сейчас»
+function nextClass() {
+  for (const k of nextDays(14)) { const c = classesOn(k).find((x) => classFree(k, x)); if (c) return { date: k, c }; }
+  return null;
+}
+// календарь на главной: полоски по часам или список групп
+const calBlock = (anim) => (CLASSES.length ? classesBlock(anim) : slotsBlock(anim));
 
 // ближайшее свободное окно
 function nextFree() {
@@ -317,6 +340,10 @@ const MARKS = {
   <path d="M24 3 C30 9 30 18 24 27 C18 18 18 9 24 3 Z"/><path d="M24 27 C16 25 9 19 7 10 C15 11 21 17 24 27 Z"/><path d="M24 27 C32 25 39 19 41 10 C33 11 27 17 24 27 Z"/></g></svg>`,
   pulse: `<svg class="brand-mark" viewBox="0 0 48 30" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
   <path d="M2 16 H13 L17 6 L23 26 L28 10 L31 16 H46"/></g></svg>`,
+  camera: `<svg class="brand-mark" viewBox="0 0 48 30" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="7" y="8" width="34" height="20" rx="4"/><path d="M17 8 L19.5 3.5 H28.5 L31 8"/><circle cx="24" cy="18" r="6"/><circle cx="35.5" cy="12.5" r="1" fill="currentColor"/></g></svg>`,
+  wave: `<svg class="brand-mark" viewBox="0 0 48 30" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2 19 C7 7 13 7 18 15 S29 25 34 13 S43 5 46 10"/><path d="M8 25 C12 21 15 21 18 23" stroke-width="1.6"/></g></svg>`,
 };
 const BRAND_MARK = MARKS[CONFIG.brand.mark] || MARKS.car;
 
@@ -371,14 +398,32 @@ function slotsBlock(anim) {
   return `<div class="slots glass${anim}">${rows}</div>`;
 }
 
+// список групп выбранного дня: время, направление, тренер, заполненность
+function classesBlock(anim) {
+  if (!state.loaded || state.loadError || !dayHours(state.day)) return slotsBlock(anim);
+  const list = classesOn(state.day).filter((c) => !classPast(state.day, c));
+  if (!list.length) return `<div class="slots glass load-err"><p><b>В этот день групп нет</b></p><p class="muted small">Выберите другой день или запишитесь на индивидуальное занятие.</p></div>`;
+  const rows = list.map((c) => {
+    const t = takenIn(state.day, c), free = c.places - t, m = masterById(c.master);
+    const act = state.owner ? `data-act="owner-class" data-id="${c.id}"` : free > 0 ? `data-act="class" data-id="${c.id}"` : '';
+    return `<div class="cls ${act ? 'free' : ''}" ${act}><span class="t">${pad(c.hour)}:00</span>
+      <div class="cls-info"><b>${esc(c.name)}</b><span class="muted small">${esc(m?.name || '')}${c.level ? ` · ${esc(c.level)}` : ''}</span>
+        <span class="cls-bar"><i style="width:${Math.min(100, (t / c.places) * 100)}%"></i></span></div>
+      <span class="s">${free > 0 ? `свободно ${free}` : 'мест нет'}</span></div>`;
+  }).join('');
+  return `<div class="slots glass${anim}">${rows}</div>`;
+}
+
 function viewHome() {
   const p = state.promo;
   let html = header();
 
-  const nf = nextFree();
-  const when = !state.loaded ? 'Загружаем расписание…' : state.loadError ? 'Нет связи с сервером' : nf ? `${dayName(nf.date)} · ${pad(nf.hour)}:00` : 'На две недели вперёд мест нет';
-  html += `<div class="hero glass" style="--hero-img:url('${CONFIG.heroImg}')${CONFIG.heroPos ? `;--hero-pos:${CONFIG.heroPos}` : ''}" ${nf ? `data-act="hero" data-date="${nf.date}" data-h="${nf.hour}"` : 'data-act="book"'}>
-    <div class="hero-text"><h2>Записаться сейчас</h2><p class="hero-label">Ближайшее свободное время</p><p class="hero-time">${when}</p>
+  // у групп — ближайшее занятие со свободными местами, иначе ближайшее свободное время
+  const nc = CLASSES.length ? nextClass() : null;
+  const nf = CLASSES.length ? (nc && { date: nc.date, hour: nc.c.hour }) : nextFree();
+  const when = !state.loaded ? 'Загружаем расписание…' : state.loadError ? 'Нет связи с сервером' : nf ? `${dayName(nf.date)} · ${pad(nf.hour)}:00${nc ? ` · ${esc(nc.c.name)}` : ''}` : 'На две недели вперёд мест нет';
+  html += `<div class="hero glass" style="--hero-img:url('${CONFIG.heroImg}')${CONFIG.heroPos ? `;--hero-pos:${CONFIG.heroPos}` : ''}" ${nf ? `data-act="hero" data-date="${nf.date}" data-h="${nf.hour}"${nc ? ` data-class="${nc.c.id}"` : ''}` : 'data-act="book"'}>
+    <div class="hero-text"><h2>${esc(CONFIG.heroTitle || 'Записаться сейчас')}</h2><p class="hero-label">${nc ? 'Ближайшая группа' : 'Ближайшее свободное время'}</p><p class="hero-time">${when}</p>
     <span class="btn primary">Записаться</span></div></div>`;
 
   if (state.owner) {
@@ -393,13 +438,13 @@ function viewHome() {
       <p class="muted small" style="margin-top:4px">Скидка применяется автоматически при записи.</p></div>`;
   }
 
-  html += `<h2 class="section-h">Свободное время</h2><div class="dates">${nextDays(14).map((k) => {
+  html += `<h2 class="section-h">${CLASSES.length ? 'Расписание групп' : 'Свободное время'}</h2><div class="dates">${nextDays(14).map((k) => {
     const d = parseDay(k);
     return `<button class="date ${k === state.day ? 'on' : ''} ${dayHours(k) ? '' : 'off'}" data-act="day" data-id="${k}"><span>${WD[d.getDay()]}</span><b>${d.getDate()}</b></button>`;
   }).join('')}</div>`;
 
-  html += `<div id="owner-day">${ownerDayBar()}</div>${slotsBlock('')}
-    <div class="legend"><span><i style="background:#1fe06a"></i>свободно</span><span><i style="background:#ff3040"></i>занято</span><span><i style="background:#2d8cff"></i>ваша запись</span>${state.owner ? '<span><i class="lg-hold"></i>закрыто вами</span>' : ''}</div>
+  html += `<div id="owner-day">${ownerDayBar()}</div>${calBlock('')}
+    ${CLASSES.length ? '' : `<div class="legend"><span><i style="background:#1fe06a"></i>свободно</span><span><i style="background:#ff3040"></i>занято</span><span><i style="background:#2d8cff"></i>ваша запись</span>${state.owner ? '<span><i class="lg-hold"></i>закрыто вами</span>' : ''}</div>`}
     <button class="btn primary block mt" data-act="book">Записаться</button>`;
 
   html += installCard();
@@ -501,7 +546,8 @@ const payBtn = (b, extra = '') => (CONFIG.demo
   : `<a class="btn pay block" href="${payUrl(b)}" target="_blank" rel="noopener" data-pay="${b.id}" ${extra}>Оплатить ${money(b.total)}</a>`);
 // строка «мастер» в карточках записи
 function masterLine(b) {
-  const m = masterById(b.master);
+  const m = masterById(b.master), c = classById(b.classId);
+  if (c) return `<p class="meta">${ico('user')}${esc(c.name)}${m ? ` · ${esc(m.name)}` : ''}</p>`;
   return m ? `<p class="meta">${ico('user')}${esc(CONFIG.masters.title)}: ${esc(m.name)}</p>` : '';
 }
 
@@ -518,7 +564,7 @@ function bookingCard(b, history) {
   const shut = shutOut(b);
   const late = active && !shut && (tooLate(b) || !!b.workStatus);
   const cancel = active && !late ? `<button class="cancel-link" data-act="cancel" data-id="${b.id}">Отменить запись</button>` : '';
-  const move = active && !late ? `<button class="move-link" data-act="move" data-id="${b.id}">Перенести</button>` : '';
+  const move = active && !late && !b.classId ? `<button class="move-link" data-act="move" data-id="${b.id}">Перенести</button>` : '';
   const cal = active ? `<button class="move-link" data-act="ics" data-id="${b.id}">${ico('ticket')}В календарь</button>` : '';
   const foot = active ? `<div class="card-foot">${cal}${move}${cancel}</div>` : '';
   const lateNote = late && !b.workStatus ? `<p class="muted small late-note">До записи меньше ${state.sched.cancelHours} ${hoursWord(state.sched.cancelHours)} — отменить или перенести можно только по телефону ${CENTER.phone}.</p>` : '';
@@ -529,7 +575,7 @@ function bookingCard(b, history) {
   return `<div class="card glass booking">
     <div class="row">${bStatusHtml(b)}<span class="muted small">№${b.id}</span></div>
     ${ready}${shutNote}
-    <h3 style="margin-top:10px">${fmtDay(b.date)}, ${pad(b.hour)}:00</h3>
+    <h3 style="margin-top:10px">${fmtDay(b.date)}, ${timeOf(b.hour, b.dur)}</h3>
     <p class="meta">${ico('pin')}${CENTER.address}</p>
     ${CONFIG.car ? `<p class="meta">${ico('car')}${esc(b.car)}</p>` : ''}${masterLine(b)}
     ${extrasHtml(b)}
@@ -606,8 +652,8 @@ function ownerTable() {
   const rows = [...active, ...rest].map((b) => {
     const d = parseDay(b.date);
     return `<tr data-act="owner-booking" data-id="${b.id}" class="${b.status === 'done' || b.status === 'cancelled' ? 'dim' : ''}">
-      <td><b>${pad(d.getDate())}.${pad(d.getMonth() + 1)}</b> ${WD[d.getDay()]}<br><span class="muted">${pad(b.hour)}:00</span><i class="soon-dot" data-start="${startMs(b)}" ${b.status === 'wait' || b.status === 'ok' ? '' : 'data-off="1"'} hidden></i></td>
-      <td>${esc(b.userName || 'Клиент')}<br><span class="muted">${esc(CONFIG.car ? b.car : masterById(b.master)?.name || '')}</span></td>
+      <td><b>${pad(d.getDate())}.${pad(d.getMonth() + 1)}</b> ${WD[d.getDay()]}<br><span class="muted">${timeOf(b.hour, b.dur)}</span><i class="soon-dot" data-start="${startMs(b)}" ${b.status === 'wait' || b.status === 'ok' ? '' : 'data-off="1"'} hidden></i></td>
+      <td>${esc(b.userName || 'Клиент')}<br><span class="muted">${esc(CONFIG.car ? b.car : classById(b.classId)?.name || masterById(b.master)?.name || '')}</span></td>
       <td class="num">${money(b.total)}${b.refund === 'pending' ? '<br><span class="refund-mark">вернуть!</span>' : b.refund === 'done' ? '<br><span class="paid-mark">возвращено</span>' : b.paid ? '<br><span class="paid-mark">оплачено</span>' : ''}</td>
       <td><span class="status ${bState(b)[1]}">${bState(b)[2]}</span></td></tr>`;
   }).join('');
@@ -720,7 +766,7 @@ function exportCsv() {
   // колонка «Автомобиль» или «Мастер» — смотря по нише
   const extra = CONFIG.car ? ['Автомобиль', (b) => b.car] : MASTERS.length ? [CONFIG.masters.title, (b) => masterById(b.master)?.name || ''] : null;
   const head = ['№', 'Дата', 'Время', 'Клиент', 'Телефон', ...(extra ? [extra[0]] : []), 'Услуги', 'Сумма, ₽', 'Скидка, ₽', 'Статус', 'Оплата', 'Пожелания'];
-  const rows = list.map((b) => [b.id, b.date.split('-').reverse().join('.'), `${pad(b.hour)}:00`, b.userName, formatPhone(b.phone), ...(extra ? [extra[1](b)] : []),
+  const rows = list.map((b) => [b.id, b.date.split('-').reverse().join('.'), timeOf(b.hour, b.dur), b.userName, formatPhone(b.phone), ...(extra ? [extra[1](b)] : []),
     itemsOf(b).list.map((s) => s.name).join(', '), b.total, b.discount, bState(b)[0],
     b.refund === 'pending' ? 'нужен возврат' : b.refund === 'done' ? 'возвращено' : b.paid ? 'оплачено' : 'нет', b.comment]);
   const csv = '﻿' + [head, ...rows].map((r) => r.map(cell).join(';')).join('\r\n');
@@ -788,7 +834,7 @@ function addToCalendar(b) {
   const icsEsc = (s) => String(s).replace(/[\\;,]/g, (c) => '\\' + c).replace(/\n/g, '\\n');
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Detailing//RU', 'BEGIN:VEVENT',
     `UID:booking-${b.id}@detailing`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`,
-    `DTSTART:${utc(b.hour)}`, `DTEND:${utc(b.hour + 1)}`,
+    `DTSTART:${utc(b.hour)}`, `DTEND:${utc(b.hour + (b.dur || 1))}`,
     `SUMMARY:${icsEsc(CENTER.name + ': ' + names)}`, `LOCATION:${icsEsc(CENTER.address)}`,
     `DESCRIPTION:${icsEsc(`Запись №${b.id}. ${names}. Итого: ${b.total} ₽.${CONFIG.car ? ` Автомобиль: ${b.car}.` : ''}${masterById(b.master) ? ` ${CONFIG.masters.title}: ${masterById(b.master).name}.` : ''}`)}`,
     'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Скоро запись: ' + CENTER.name, 'END:VALARM',
@@ -807,7 +853,7 @@ function askShut() {
   const b = state.bookings.find(shutOut);
   if (!b) return;
   openSimple(`<h2>${Place} не работает в день вашей записи</h2>
-    <p class="muted" style="margin:6px 0 14px">Запись на ${fmtDay(b.date)}, ${pad(b.hour)}:00. Перенесите её на другое время или отмените.${b.paid ? ` При отмене вернём ${money(b.total)}.` : ''}</p>
+    <p class="muted" style="margin:6px 0 14px">Запись на ${fmtDay(b.date)}, ${timeOf(b.hour, b.dur)}. Перенесите её на другое время или отмените.${b.paid ? ` При отмене вернём ${money(b.total)}.` : ''}</p>
     <button class="btn primary block" data-act="move" data-id="${b.id}">Перенести</button>
     <div class="actions"><button class="btn" data-act="close">Позже</button><button class="btn danger" data-act="cancel" data-id="${b.id}">Отменить запись</button></div>`);
 }
@@ -844,7 +890,7 @@ function ownerBookingSheet(id) {
     : b.workStatus === 'in_work' ? ['work', w.readyBtn, 'ready']
     : ['confirm', w.doneBtn];
   openSimple(`<div class="row">${bStatusHtml(b)}<span class="muted small">№${b.id}</span></div>
-    <h2 style="margin-top:12px">${fmtDay(b.date)}, ${pad(b.hour)}:00</h2>
+    <h2 style="margin-top:12px">${fmtDay(b.date)}, ${timeOf(b.hour, b.dur)}</h2>
     ${noShows ? `<p class="warn-note">⚠️ У клиента неявок: ${noShows}</p>` : ''}
     ${shut ? `<p class="warn-note">⚠️ В это время ${PLACE} ${closedWord}. Клиент видит просьбу перенести или отменить запись. Можно позвонить ему или перенести самому.</p>` : ''}
     ${b.comment || b.photos?.length ? `<div class="card glass"><p class="muted small" style="margin-bottom:4px">Пожелания клиента</p>${extrasHtml(b)}</div>` : ''}
@@ -852,6 +898,7 @@ function ownerBookingSheet(id) {
       <div class="row"><span class="muted">Клиент</span><span>${esc(b.userName || '—')}</span></div>
       <div class="row"><span class="muted">Телефон</span><a href="tel:+7${phoneDigits(b.phone)}" style="color:var(--accent)">${esc(formatPhone(b.phone) || b.phone)}</a></div>
       ${CONFIG.car ? `<div class="row"><span class="muted">Автомобиль</span><span>${esc(b.car)}</span></div>` : ''}
+      ${classById(b.classId) ? `<div class="row"><span class="muted">Группа</span><span>${esc(classById(b.classId).name)}</span></div>` : ''}
       ${masterById(b.master) ? `<div class="row"><span class="muted">${esc(CONFIG.masters.title)}</span><span>${esc(masterById(b.master).name)}</span></div>` : ''}
       <div class="row"><span class="muted">Оплата</span><span>${b.refund === 'pending' ? '<b class="refund-mark">нужно вернуть ' + money(b.total) + '</b>' : b.refund === 'done' ? 'деньги возвращены' : b.paid ? '✅ оплачено' : 'не оплачено'}</span></div>
     </div>
@@ -860,7 +907,7 @@ function ownerBookingSheet(id) {
       ${b.discount ? `<div class="row muted"><span>Скидка</span><span>−${money(b.discount)}</span></div>` : ''}
       <div class="row total"><span>Итого</span><span>${money(b.total)}${t.unknown ? ' + по телефону' : ''}</span></div></div></div>
     ${active ? `${shut ? '' : `<button class="btn primary block" data-act="${main[0]}" data-id="${b.id}" ${main[2] ? `data-ws="${main[2]}"` : ''}>${main[1]}</button>`}
-      <button class="btn ${shut ? 'primary' : ''} block" data-act="move" data-id="${b.id}" style="margin-top:10px">Перенести</button>
+      ${b.classId ? '' : `<button class="btn ${shut ? 'primary' : ''} block" data-act="move" data-id="${b.id}" style="margin-top:10px">Перенести</button>`}
       ${started && !b.workStatus ? `<button class="btn block" data-act="noshow" data-id="${b.id}" style="margin-top:10px">Клиент не пришёл</button>` : ''}` : ''}
     ${b.refund === 'pending' ? `<p class="muted small" style="margin:4px 0 10px">Верните ${money(b.total)} клиенту удобным способом (например, переводом по номеру ${esc(formatPhone(b.phone))}) и нажмите кнопку ниже.</p>
       <button class="btn pay block" data-act="refunded" data-id="${b.id}">Деньги возвращены</button>` : ''}
@@ -890,7 +937,7 @@ function viewMine() {
 function openBooking(opts = {}) {
   renderSheet.prev = 1; renderSheet.last = null;
   const services = opts.services ? [...opts.services] : opts.service ? [opts.service] : [];
-  state.draft = { step: 1, services, date: opts.date || (dayHours(state.day) ? state.day : firstOpenDay()), hour: opts.hour ?? null, master: opts.master || 0, phone: opts.phone || state.user?.phone || '', car: opts.car || '', comment: '', files: [] };
+  state.draft = { step: 1, services, date: opts.date || (dayHours(state.day) ? state.day : firstOpenDay()), hour: opts.hour ?? null, master: opts.master || 0, classId: opts.classId || null, phone: opts.phone || state.user?.phone || '', car: opts.car || '', comment: '', files: [] };
   state.draft.step = opts.step || (services.length ? 2 : 1);
   renderSheet();
   // свежая занятость: вдруг кто-то записался, пока страница была открыта
@@ -916,7 +963,7 @@ function moveSheet(id) {
   state.move = { id, date: days.includes(b.date) && dayHours(b.date) ? b.date : days.find((k) => dayHours(k)) || days[0], hour: null, from: { date: b.date, hour: b.hour }, master: b.master || 0, services: b.services };
   const m = state.move;
   openSimple(`<h2>Перенос записи</h2>
-    <p class="muted" style="margin-bottom:12px">Сейчас: ${fmtDay(b.date)}, ${pad(b.hour)}:00.${state.owner ? '' : ' После переноса запись снова подтвердит владелец.'}</p>
+    <p class="muted" style="margin-bottom:12px">Сейчас: ${fmtDay(b.date)}, ${timeOf(b.hour, b.dur)}.${state.owner ? '' : ' После переноса запись снова подтвердит владелец.'}</p>
     <div class="dates">${days.map((k) => {
       const dt = parseDay(k);
       return `<button class="date ${k === m.date ? 'on' : ''} ${dayHours(k) ? '' : 'off'}" data-act="mdate" data-id="${k}" ${dayHours(k) ? '' : 'disabled'}><span>${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></button>`;
@@ -934,6 +981,15 @@ function renderSheet() {
     body = `<h2>1. Выберите услуги</h2>` + state.services.map((s) => `<div class="pick glass ${d.services.includes(s.id) ? 'on' : ''}" data-act="pick" data-id="${s.id}">
       <div class="chk">${d.services.includes(s.id) ? '✓' : ''}</div><div style="flex:1"><b>${esc(s.name)}</b>${s.time ? `<span class="pick-time">${esc(s.time)}</span>` : ''}</div><span class="price small">${priceLabel(s)}</span></div>`).join('');
     ok = d.services.length > 0;
+  } else if (d.step === 2 && isGroup(d.services)) {
+    // запись в группу: дата и группа из расписания этого дня
+    const c = classById(d.classId);
+    if (c && (c.day !== parseDay(d.date).getDay() || !classFree(d.date, c))) { d.classId = null; d.hour = null; }
+    body = `<h2>2. Дата и группа</h2><div class="dates">${nextDays(14).map((k) => {
+      const dt = parseDay(k), has = dayHours(k) && classesOn(k).length;
+      return `<button class="date ${k === d.date ? 'on' : ''} ${has ? '' : 'off'}" data-act="sdate" data-id="${k}" ${has ? '' : 'disabled'}><span>${WD[dt.getDay()]}</span><b>${dt.getDate()}</b></button>`;
+    }).join('')}</div><div class="hours classes-pick">${classesGrid(d)}</div>`;
+    ok = !!d.classId;
   } else if (d.step === 2) {
     // выбранный мастер больше не подходит к услугам или время уже занято — сбрасываем выбор
     if (d.master && !mastersFor(d.services).some((m) => m.id === d.master)) d.master = 0;
@@ -959,7 +1015,7 @@ function renderSheet() {
       ${t.list.map((s) => `<div class="row" style="padding:3px 0"><span>${esc(s.name)}</span><span>${s.price === null ? 'по телефону' : money(s.price)}</span></div>`).join('')}
       <div class="lines">${t.discount ? `<div class="row muted"><span>Скидка ${state.promo.percent}%</span><span>−${money(t.discount)}</span></div>` : ''}
       <div class="row total"><span>Итого</span><span>${money(t.total)}${t.unknown ? ' + по телефону' : ''}</span></div></div></div>
-      <div class="card glass summary"><p class="meta">${ico('ticket')}${fmtDay(d.date)}, ${pad(d.hour)}:00</p>${MASTERS.length ? `<p class="meta">${ico('user')}${esc(CONFIG.masters.title)}: ${esc(masterById(d.master)?.name || CONFIG.masters.any.toLowerCase())}</p>` : ''}${CONFIG.car ? `<p class="meta">${ico('car')}${esc(d.car)}</p>` : ''}<p class="meta">${ico('phone')}${esc(formatPhone(d.phone))}</p><p class="meta">${ico('pin')}${CENTER.address}</p>
+      <div class="card glass summary"><p class="meta">${ico('ticket')}${fmtDay(d.date)}, ${timeOf(d.hour, d.classId ? 1 : durOf(d.services))}</p>${d.classId ? `<p class="meta">${ico('user')}${esc(classById(d.classId).name)} · ${esc(masterById(d.master)?.name || '')}</p>` : MASTERS.length ? `<p class="meta">${ico('user')}${esc(CONFIG.masters.title)}: ${esc(masterById(d.master)?.name || CONFIG.masters.any.toLowerCase())}</p>` : ''}${CONFIG.car ? `<p class="meta">${ico('car')}${esc(d.car)}</p>` : ''}<p class="meta">${ico('phone')}${esc(formatPhone(d.phone))}</p><p class="meta">${ico('pin')}${CENTER.address}</p>
         ${d.comment ? `<p class="comment">«${esc(d.comment)}»</p>` : ''}${d.files?.length ? `<p class="meta">Фото: ${d.files.length}</p>` : ''}</div>
       ${state.sched.cancelHours ? `<p class="muted small">Отменить или перенести запись онлайн можно не позже чем за ${state.sched.cancelHours} ${hoursWord(state.sched.cancelHours)} до начала.</p>` : ''}`;
     next = 'Записаться';
@@ -982,9 +1038,22 @@ function renderSheet() {
   }
 }
 
+// группы выбранного дня кнопками: время, направление, тренер, свободные места
+function classesGrid(d) {
+  const list = classesOn(d.date).filter((c) => !classPast(d.date, c));
+  if (!list.length) return '<p class="muted hours-note">В этот день групп нет — выберите другой.</p>';
+  return list.map((c) => {
+    const free = c.places - takenIn(d.date, c), m = masterById(c.master);
+    return `<button class="cls-pick ${d.classId === c.id ? 'on' : ''}" data-act="sclass" data-id="${c.id}" ${free > 0 ? '' : 'disabled'}>
+      <b>${pad(c.hour)}:00 · ${esc(c.name)}</b><small>${esc(m?.name || '')}${c.level ? ` · ${esc(c.level)}` : ''} · ${free > 0 ? `свободно ${free} из ${c.places}` : 'мест нет'}</small></button>`;
+  }).join('');
+}
+
 // выбор мастера: «любой» и те, кто делает выбранные услуги
 function mastersPicker(d) {
   if (!MASTERS.length) return '';
+  // услуги без мастера (аренда зала) — выбирать некого
+  if (d.services.every((id) => state.services.find((s) => s.id === id)?.masters?.length === 0)) return '';
   if (!mastersFor(d.services).length) return `<p class="demo-hint">Эти услуги делают разные ${esc(CONFIG.masters.whoPlural)} — мы подберём их на выбранное время.</p>`;
   const any =`<button class="master ${!d.master ? 'on' : ''}" data-act="smaster" data-id="0"><span class="avatar sm any-av" aria-hidden="true">${ICONS.user}</span><span><b>${esc(CONFIG.masters.any)}</b><small>ближайшее время</small></span></button>`;
   return `<div class="masters">${any}${mastersFor(d.services).map((m) => `<button class="master ${d.master === m.id ? 'on' : ''}" data-act="smaster" data-id="${m.id}">${avatarHtml(m.name, m.color, 'sm')}<span><b>${esc(m.name)}</b><small>${esc(m.role)}</small></span></button>`).join('')}</div>`;
@@ -1018,7 +1087,7 @@ async function confirmBooking() {
   try {
     const items = t.list.map((s) => ({ id: s.id, name: s.name, price: s.price }));
     const photos = d.files?.length ? await api.uploadPhotos(d.files, state.user.id) : [];
-    const created = await api.addBooking({ userName: state.user.name, phone: phoneDigits(d.phone), car: d.car, services: d.services, items, date: d.date, hour: d.hour, discount: t.discount, total: t.total, comment: d.comment, photos, master: d.master || null });
+    const created = await api.addBooking({ userName: state.user.name, phone: phoneDigits(d.phone), car: d.car, services: d.services, items, date: d.date, hour: d.hour, discount: t.discount, total: t.total, comment: d.comment, photos, master: d.master || null, dur: d.classId ? 1 : durOf(d.services), classId: d.classId || null });
     // машину — в «мой гараж», чтобы в следующий раз выбрать одним нажатием
     if (CONFIG.car && !state.cars.some((c) => c.title.toLowerCase() === d.car.toLowerCase())) api.addCar(d.car).then(() => api.cars()).then((c) => { state.cars = c; }).catch(() => {});
     state.bookings.push(created);
@@ -1042,7 +1111,7 @@ function paySheet(b) {
   sheet.classList.add('opening'); setTimeout(() => sheet.classList.remove('opening'), 500);
   sheet.hidden = false;
   sheet.innerHTML = `<div class="panel glass"><div class="step-body to-next"><h2>Запись создана</h2>
-    <p class="muted" style="margin-bottom:14px">${fmtDay(b.date)}, ${pad(b.hour)}:00. Оплатить можно сейчас онлайн или позже, в разделе «Моя запись».</p>
+    <p class="muted" style="margin-bottom:14px">${fmtDay(b.date)}, ${timeOf(b.hour, b.dur)}. Оплатить можно сейчас онлайн или позже, в разделе «Моя запись».</p>
     ${payBtn(b, 'data-act="close"')}
     <button class="btn block" data-act="ics" data-id="${b.id}" style="margin-top:10px">${ico('ticket')}Добавить в календарь</button>
     <div class="actions"><button class="btn" data-act="close">Оплатить позже</button></div></div></div>`;
@@ -1124,7 +1193,7 @@ document.addEventListener('click', (e) => {
       // лента дат не перерисовывается: меняем только подсветку и календарь
       state.day = id;
       document.querySelectorAll('.dates .date').forEach((b) => b.classList.toggle('on', b.dataset.id === id));
-      $('.slots').outerHTML = slotsBlock(' anim');
+      $('.slots').outerHTML = calBlock(' anim');
       const od = $('#owner-day'); if (od) od.innerHTML = ownerDayBar();
     },
     slot: () => openBooking({ date: state.day, hour: Number(el.dataset.h) }),
@@ -1151,7 +1220,13 @@ document.addEventListener('click', (e) => {
         <button class="btn pay block" data-act="paid" data-id="${b.id}">Оплатить ${money(b.total)}</button>
         <div class="actions"><button class="btn" data-act="close">Отмена</button></div>`);
     },
-    hero: () => openBooking({ date: el.dataset.date, hour: Number(el.dataset.h) }),
+    hero: () => (el.dataset.class ? actions.class(Number(el.dataset.class), el.dataset.date) : openBooking({ date: el.dataset.date, hour: Number(el.dataset.h) })),
+    // группа на главной: сразу к выбору группы с пробным занятием
+    class: (cid = Number(id), date = state.day) => {
+      const c = classById(cid), first = state.services.find((s) => s.group);
+      openBooking({ services: [first.id], date, hour: c.hour, master: c.master, classId: c.id, step: 2 });
+    },
+    'owner-class': () => ownerClassSheet(Number(id)),
     book: () => openBooking({ service: id ? Number(id) : null }),
     close: () => { state.pendingDraft = null; closeSheet(); },
     'cart-toggle': () => {
@@ -1162,11 +1237,18 @@ document.addEventListener('click', (e) => {
     cart: () => openBooking({ services: state.cart, step: 1 }),
     back: () => { d.step--; renderSheet(); },
     next: nextStep,
-    pick: () => { const n = Number(id); d.services = d.services.includes(n) ? d.services.filter((x) => x !== n) : [...d.services, n]; renderSheet(); },
+    pick: () => {
+      const n = Number(id);
+      // услуга «в группу» выбирается одна; обычные услуги можно сочетать между собой
+      d.services = d.services.includes(n) ? d.services.filter((x) => x !== n) : groupSvc(n) ? [n] : [...d.services.filter((x) => !groupSvc(x)), n];
+      if (!isGroup(d.services)) d.classId = null;
+      renderSheet();
+    },
+    sclass: () => { const c = classById(Number(id)); d.classId = c.id; d.hour = c.hour; d.master = c.master; renderSheet(); },
     sdate: () => {
-      d.date = id; d.hour = null;
+      d.date = id; d.hour = null; d.classId = null;
       document.querySelectorAll('.panel .date').forEach((b) => b.classList.toggle('on', b.dataset.id === id));
-      $('.panel .hours').innerHTML = hoursGrid(d);
+      $('.panel .hours').innerHTML = isGroup(d.services) ? classesGrid(d) : hoursGrid(d);
       $('[data-act="next"]').disabled = true;
     },
     hour: () => {
@@ -1470,6 +1552,15 @@ function ownerSlotSheet(h) {
         <b>${s.hold}</b><button class="btn sm" data-act="block-add" data-h="${h}" aria-label="Закрыть одно место" ${s.free <= 0 ? 'disabled' : ''}>+</button></div></div>
     <div class="actions"><button class="btn" data-act="close">Готово</button></div>`);
 }
+// владелец: кто записан в группу в выбранный день
+function ownerClassSheet(cid) {
+  const c = classById(cid), m = masterById(c.master);
+  const list = state.bookings.filter((b) => b.classId === cid && b.date === state.day && (b.status === 'wait' || b.status === 'ok'));
+  openSimple(`<h2>${esc(c.name)}</h2>
+    <p class="muted" style="margin-bottom:12px">${fmtDay(state.day)}, ${pad(c.hour)}:00 · ${esc(m?.name || '')} · записано ${list.length} из ${c.places}</p>
+    <div class="card glass">${list.map((b) => `<div class="row cls-who" data-act="owner-booking" data-id="${b.id}"><span><b>${esc(b.userName)}</b><br><span class="muted small">${esc(itemsOf(b).list.map((x) => x.name).join(', '))}</span></span><span class="status ${bState(b)[1]}">${bState(b)[2]}</span></div>`).join('') || '<p class="muted small">Пока никто не записан.</p>'}</div>
+    <div class="actions"><button class="btn" data-act="close">Закрыть</button></div>`);
+}
 // плашка владельца над календарём: закрыть или открыть весь выбранный день
 function ownerDayBar() {
   if (!state.owner) return '';
@@ -1477,13 +1568,13 @@ function ownerDayBar() {
   if (!state.sched.schedule[parseDay(k).getDay()]) return '<p class="owner-day muted small">Выходной по графику. Изменить — кнопка «График» на странице записей.</p>';
   return state.sched.closed.includes(k)
     ? `<div class="owner-day row"><span>${fmtDay(k)} закрыт для записи</span><button class="btn sm" data-act="day-open">Открыть день</button></div>`
-    : `<div class="owner-day row"><span class="muted small">Нажмите на час, чтобы закрыть его, или</span><button class="btn sm" data-act="day-close">Закрыть весь день</button></div>`;
+    : `<div class="owner-day row"><span class="muted small">${CLASSES.length ? 'Нажмите на группу, чтобы увидеть, кто записан, или' : 'Нажмите на час, чтобы закрыть его, или'}</span><button class="btn sm" data-act="day-close">Закрыть весь день</button></div>`;
 }
 async function afterBlock(msg) {
   state.blocks = await api.blocks();
   await refreshCounts();
   closeSheet();
-  const sl = $('.slots'); if (sl) sl.outerHTML = slotsBlock('');
+  const sl = $('.slots'); if (sl) sl.outerHTML = calBlock('');
   toast(msg);
 }
 // ---------- владелец: услуги ----------
@@ -1570,7 +1661,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   // вернулись на вкладку — обновляем занятость
-  refreshCounts().then(() => { if (state.tab === 'home' && $('.slots')) $('.slots').outerHTML = slotsBlock(''); }).catch(() => {});
+  refreshCounts().then(() => { if (state.tab === 'home' && $('.slots')) $('.slots').outerHTML = calBlock(''); }).catch(() => {});
   if (!state.payPending) return;
   const id = state.payPending; state.payPending = null;
   if (state.bookings.find((b) => b.id === id)?.paid) return;

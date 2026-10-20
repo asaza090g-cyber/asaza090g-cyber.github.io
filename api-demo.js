@@ -19,7 +19,7 @@ function errText(e) {
 }
 
 const api = (() => {
-  const DEMO_KEY = 'demo-' + CONFIG.id + '-v3';
+  const DEMO_KEY = 'demo-' + CONFIG.id + '-v5';
   const DM = CONFIG.masters?.list || [];
   const OWNER = { id: 'owner', name: 'Владелец', phone: '9000000000', isOwner: true, color: null };
   const ME = { id: 'client', name: CONFIG.demoData.me, phone: '9001234567', isOwner: false, color: null };
@@ -40,6 +40,16 @@ const api = (() => {
     };
   }
 
+  // ---------- общее: кто и когда занят ----------
+  const CLASSES = CONFIG.classes || [];
+  const active = (b) => b.status === 'wait' || b.status === 'ok';
+  const weekday = (date) => { const [y, m, d] = date.split('-').map(Number); return new Date(y, m - 1, d).getDay(); };
+  const durOfIds = (list, ids) => Math.max(1, ...ids.map((id) => list.find((s) => s.id === id)?.hours || 1));
+  // запись занимает часы с hour по hour + dur − 1; записи в группы место у мастеров не занимают
+  const covers = (b, date, hour) => active(b) && !b.classId && b.date === date && hour >= b.hour && hour < b.hour + (b.dur || 1);
+  const teaching = (date, hour) => CLASSES.filter((c) => c.day === weekday(date) && c.hour === hour).map((c) => c.master);
+  const inClass = (list, date, classId, skipId) => list.filter((b) => active(b) && b.classId === classId && b.date === date && b.id !== skipId).length;
+
   // ---------- исходные данные: записи за месяц назад и полторы недели вперёд ----------
   function seed() {
     const D = CONFIG.demoData, today = dkey(new Date());
@@ -53,53 +63,85 @@ const api = (() => {
       settings: { promo: { ...D.promo }, schedule: clone(CONFIG.schedule), capacity: cap, closed: [], cancelHours: 3 },
       reviews: D.reviews.map((rv, i) => ({ id: i + 1, color: null, reply: null, ...rv, date: dkey(dayFrom(-(i * 6 + 2))) })) };
     const svc = (id) => services.find((s) => s.id === id);
-    const at = (date, hour) => store.bookings.filter((b) => b.date === date && b.hour === hour && (b.status === 'wait' || b.status === 'ok'));
     const canDo = (m, ids) => ids.every((id) => !svc(id).masters || svc(id).masters.includes(m.id));
     const nowH = new Date().getHours();
-    // запись в свободное место; null — если места нет
-    function put(date, hour, ids, who, extra = {}) {
-      const busy = at(date, hour);
-      if (busy.length >= cap) return null;
-      let master = null;
-      if (DM.length) {
-        const free = DM.filter((m) => canDo(m, ids) && !busy.some((b) => b.master === m.id));
-        if (!free.length) return null;
-        master = pick(free).id;
-      }
+    const make = (date, hour, ids, who, extra) => {
       const items = ids.map((id) => ({ id, name: svc(id).name, price: svc(id).price }));
       const b = { id: store.seq++, userId: who.id, userName: who.name, phone: who.phone, car: CONFIG.car ? (extra.car || pick(D.cars)) : '',
-        services: ids, items, date, hour, master, discount: 0, total: items.reduce((a, s) => a + (s.price || 0), 0),
+        services: ids, items, date, hour, master: null, dur: 1, discount: 0, total: items.reduce((a, s) => a + (s.price || 0), 0),
         status: 'wait', paid: false, refund: null, comment: '', photos: [], workStatus: null, noShow: false, ...extra };
       store.bookings.push(b);
       return b;
+    };
+    // запись в свободное место на все её часы; null — если места нет
+    function put(date, hour, ids, who, extra = {}) {
+      const dur = durOfIds(services, ids), day = CONFIG.schedule[weekday(date)];
+      if (!day || hour + dur > day.close) return null;
+      const hours = Array.from({ length: dur }, (_, i) => hour + i);
+      if (hours.some((h) => store.bookings.filter((b) => covers(b, date, h)).length >= cap)) return null;
+      let master = null;
+      if (DM.length) {
+        const free = DM.filter((m) => canDo(m, ids) && hours.every((h) => !store.bookings.some((b) => covers(b, date, h) && b.master === m.id) && !teaching(date, h).includes(m.id)));
+        if (!free.length) return null;
+        master = pick(free).id;
+      }
+      return make(date, hour, ids, who, { ...extra, master, dur });
     }
+    // запись в группу по расписанию
+    function putClass(date, c, ids, who, extra = {}) {
+      if (inClass(store.bookings, date, c.id) >= c.places) return null;
+      return make(date, c.hour, ids, who, { ...extra, classId: c.id, master: c.master });
+    }
+    const single = services.filter((s) => !s.group), group = services.filter((s) => s.group);
     const randomServices = () => {
-      const ids = [pick(services).id];
-      if (r() < 0.25) { const second = pick(services).id; if (second !== ids[0]) ids.push(second); }
+      const ids = [pick(single).id];
+      if (!CLASSES.length && r() < 0.25) { const second = pick(single).id; if (second !== ids[0]) ids.push(second); }
       return ids;
     };
+    const status = (n, h) => {
+      const x = r(), past = n < 0 || (n === 0 && h < nowH - 1);
+      return past
+        ? (x < 0.88 ? { status: 'done', paid: r() < 0.75 } : x < 0.94 ? { status: 'cancelled' } : { status: 'cancelled', noShow: true })
+        : n === 0 && h <= nowH ? (CONFIG.work ? { status: 'ok', paid: r() < 0.5, workStatus: h === nowH ? 'in_work' : 'ready' } : { status: h === nowH ? 'ok' : 'done', paid: true })
+        : (x < 0.35 ? { status: 'wait' } : { status: 'ok', paid: r() < 0.4 });
+    };
     const openDay = (from, step) => { for (let n = from; Math.abs(n) < 40; n += step) { const d = dayFrom(n); if (CONFIG.schedule[d.getDay()]) return d; } return dayFrom(from); };
+    const classDay = (from, step) => { for (let n = from; Math.abs(n) < 40; n += step) { const d = dayFrom(n); const c = CLASSES.find((x) => x.day === d.getDay()); if (c) return [d, c]; } return null; };
+
     // свои записи демо-клиента: одна впереди, две в истории
-    const next = openDay(1, 1), nextS = CONFIG.schedule[next.getDay()];
-    put(dkey(next), Math.min(nextS.open + 3, nextS.close - 1), [services[0].id], ME, { car: CONFIG.car ? D.cars[0] : '' });
-    const p1 = openDay(-12, -1), p1s = CONFIG.schedule[p1.getDay()];
-    put(dkey(p1), p1s.open + 2, [services[1].id], ME, { status: 'done', paid: true, car: CONFIG.car ? D.cars[0] : '' });
-    const p2 = openDay(-31, -1), p2s = CONFIG.schedule[p2.getDay()];
-    put(dkey(p2), p2s.open + 4, [services[0].id], ME, { status: 'done', paid: true, car: CONFIG.car ? D.cars[0] : '' });
+    if (CLASSES.length) {
+      const [d0, c0] = classDay(1, 1), [d1, c1] = classDay(-9, -1), [d2, c2] = classDay(-16, -1);
+      putClass(dkey(d0), c0, [group[0].id], ME);
+      putClass(dkey(d1), c1, [group[0].id], ME, { status: 'done', paid: true });
+      putClass(dkey(d2), c2, [group[1].id], ME, { status: 'done', paid: true });
+    } else {
+      const next = openDay(1, 1), nextS = CONFIG.schedule[next.getDay()];
+      put(dkey(next), Math.min(nextS.open + 3, nextS.close - durOfIds(services, [services[0].id])), [services[0].id], ME, { car: CONFIG.car ? D.cars[0] : '' });
+      const p1 = openDay(-12, -1), p1s = CONFIG.schedule[p1.getDay()];
+      put(dkey(p1), p1s.open + 2, [services[1].id], ME, { status: 'done', paid: true, car: CONFIG.car ? D.cars[0] : '' });
+      const p2 = openDay(-31, -1), p2s = CONFIG.schedule[p2.getDay()];
+      put(dkey(p2), p2s.open + 4, [services[0].id], ME, { status: 'done', paid: true, car: CONFIG.car ? D.cars[0] : '' });
+    }
 
     for (let n = -35; n <= 10; n++) {
       const day = dayFrom(n), date = dkey(day), s = CONFIG.schedule[day.getDay()];
       if (!s) continue;
-      const fill = n < 0 ? 0.3 : n === 0 ? 0.4 : Math.max(0.08, 0.36 - n * 0.03);
+      // группы: в прошлом почти полные, впереди — заполняются
+      for (const c of CLASSES.filter((x) => x.day === day.getDay())) {
+        const want = Math.round(c.places * (n < 0 ? 0.55 + r() * 0.4 : Math.max(0.15, 0.7 - n * 0.06 + r() * 0.2)));
+        for (let k = 0; k < want; k++) {
+          const ids = [r() < 0.2 ? group[0].id : pick(group).id];
+          putClass(date, c, ids, pick(clients), status(n, c.hour));
+        }
+      }
+      if (!single.length) continue;
+      // многочасовые брони занимают больше места — выдуманных записей делаем меньше
+      const avgDur = single.reduce((x, sv) => x + (sv.hours || 1), 0) / single.length;
+      const fill = (CLASSES.length ? 0.35 : 1) / avgDur * (n < 0 ? 0.3 : n === 0 ? 0.4 : Math.max(0.08, 0.36 - n * 0.03));
       for (let h = s.open; h < s.close; h++) {
         for (let k = 0; k < cap; k++) {
           if (r() > fill) continue;
-          const past = n < 0 || (n === 0 && h < nowH - 1);
-          const x = r();
-          const extra = past
-            ? (x < 0.88 ? { status: 'done', paid: r() < 0.75 } : x < 0.94 ? { status: 'cancelled' } : { status: 'cancelled', noShow: true })
-            : n === 0 && h <= nowH ? (CONFIG.work ? { status: 'ok', paid: r() < 0.5, workStatus: h === nowH ? 'in_work' : 'ready' } : { status: h === nowH ? 'ok' : 'done', paid: true })
-            : (x < 0.35 ? { status: 'wait' } : { status: 'ok', paid: r() < 0.4 });
+          const extra = status(n, h);
           if (r() < 0.15) extra.comment = pick(D.comments);
           put(date, h, randomServices(), pick(clients), extra);
         }
@@ -115,30 +157,43 @@ const api = (() => {
 
   // ---------- проверки, как на настоящем сервере ----------
   const findB = (id) => store.bookings.find((b) => b.id === id);
-  const active = (b) => b.status === 'wait' || b.status === 'ok';
   const svcOf = (id) => store.services.find((s) => s.id === id);
   const masterCan = (m, ids) => ids.every((id) => !svcOf(id)?.masters || svcOf(id).masters.includes(m.id));
   const startOf = (b) => { const [y, m, d] = b.date.split('-').map(Number); return new Date(y, m - 1, d, b.hour).getTime(); };
-  function slotProblem(date, hour, master, ids, skipId) {
+  const dayProblem = (date, hour) => {
     const s = store.settings, now = new Date(), today = dkey(now);
     if (date < today || (date === today && hour <= now.getHours())) return 'past_date';
-    const [y, m, d] = date.split('-').map(Number);
-    const day = s.schedule[new Date(y, m - 1, d).getDay()];
-    if (s.closed.includes(date) || !day) return 'day_closed';
-    if (hour < day.open || hour >= day.close) return 'hour_closed';
-    const busy = store.bookings.filter((b) => b.date === date && b.hour === hour && active(b) && b.id !== skipId);
-    const held = store.blocks.filter((b) => b.date === date && b.hour === hour).length;
-    if (busy.length + held >= (DM.length || s.capacity)) return 'slot_full';
+    if (s.closed.includes(date) || !s.schedule[weekday(date)]) return 'day_closed';
+    return null;
+  };
+  // свободные мастера на все часы записи
+  const freeMasters = (date, hours, ids, skipId) => DM.filter((x) => masterCan(x, ids)
+    && hours.every((h) => !store.bookings.some((b) => b.id !== skipId && covers(b, date, h) && b.master === x.id) && !teaching(date, h).includes(x.id)));
+  function slotProblem(date, hour, master, ids, skipId, dur = 1) {
+    const p = dayProblem(date, hour); if (p) return p;
+    const s = store.settings, day = s.schedule[weekday(date)];
+    if (hour < day.open || hour + dur > day.close) return 'hour_closed';
+    const hours = Array.from({ length: dur }, (_, i) => hour + i);
+    for (const h of hours) {
+      const busy = store.bookings.filter((b) => b.id !== skipId && covers(b, date, h)).length;
+      const held = store.blocks.filter((b) => b.date === date && b.hour === h).length;
+      if (busy + held >= (DM.length || s.capacity)) return 'slot_full';
+    }
     if (DM.length) {
-      const cand = master ? DM.filter((x) => x.id === master) : DM.filter((x) => masterCan(x, ids));
-      if (cand.length && !cand.some((x) => !busy.some((b) => b.master === x.id))) return 'slot_full';
+      const fit = freeMasters(date, hours, ids, skipId);
+      const any = DM.some((x) => masterCan(x, ids));
+      if (master ? !fit.some((x) => x.id === master) : any && !fit.length) return 'slot_full';
     }
     return null;
   }
+  function classProblem(date, classId, skipId) {
+    const c = CLASSES.find((x) => x.id === classId);
+    if (!c || c.day !== weekday(date)) return 'hour_closed';
+    return dayProblem(date, c.hour) || (inClass(store.bookings, date, classId, skipId) >= c.places ? 'slot_full' : null);
+  }
   const tooLate = (b) => store.settings.cancelHours > 0 && startOf(b) - Date.now() < store.settings.cancelHours * 3600000;
   function shut(b) {
-    const [y, m, d] = b.date.split('-').map(Number);
-    const day = store.settings.schedule[new Date(y, m - 1, d).getDay()];
+    const day = store.settings.schedule[weekday(b.date)];
     return store.settings.closed.includes(b.date) || !day || b.hour < day.open || b.hour >= day.close;
   }
   function canChange(b) {
@@ -212,11 +267,15 @@ const api = (() => {
     // ---------- занятость и записи ----------
     async counts(d1, d2) {
       const map = {}, me = store.session?.id;
-      const slot = (k) => map[k] || (map[k] = { booked: 0, held: 0, mine: 0, masters: [] });
+      const slot = (k) => map[k] || (map[k] = { booked: 0, held: 0, mine: 0, masters: [], cls: {} });
       store.bookings.forEach((b) => {
         if (!active(b) || b.date < d1 || b.date > d2) return;
-        const s = slot(b.date + '|' + b.hour);
-        s.booked++; if (me && b.userId === me) s.mine++; if (b.master) s.masters.push(b.master);
+        // запись в группу: считаем места в группе, а не у мастеров
+        if (b.classId) { const s = slot(b.date + '|' + b.hour); s.cls[b.classId] = (s.cls[b.classId] || 0) + 1; if (me && b.userId === me) s.mine++; return; }
+        for (let h = b.hour; h < b.hour + (b.dur || 1); h++) {
+          const s = slot(b.date + '|' + h);
+          s.booked++; if (me && b.userId === me) s.mine++; if (b.master) s.masters.push(b.master);
+        }
       });
       store.blocks.forEach((b) => { if (b.date >= d1 && b.date <= d2) slot(b.date + '|' + b.hour).held++; });
       return map;
@@ -229,21 +288,24 @@ const api = (() => {
     async addBooking(b) {
       await pause(150);
       const me = store.session; if (!me) throw new Error('not_allowed');
-      const p = slotProblem(b.date, b.hour, b.master, b.services, null);
-      if (p) throw new Error(p);
-      let master = b.master || null;
-      if (DM.length && !master) {
-        const busy = store.bookings.filter((x) => x.date === b.date && x.hour === b.hour && active(x)).map((x) => x.master);
-        master = DM.find((m) => masterCan(m, b.services) && !busy.includes(m.id))?.id || null; // разные мастера — без привязки
+      let master = b.master || null, dur = b.dur || 1, hour = b.hour;
+      if (b.classId) {
+        const p = classProblem(b.date, b.classId, null); if (p) throw new Error(p);
+        const c = CLASSES.find((x) => x.id === b.classId);
+        master = c.master; hour = c.hour; dur = 1;
+      } else {
+        const p = slotProblem(b.date, b.hour, b.master, b.services, null, dur); if (p) throw new Error(p);
+        // «любой мастер» — первый, кто свободен на все часы; услуги разных мастеров — без привязки
+        if (DM.length && !master) master = freeMasters(b.date, Array.from({ length: dur }, (_, i) => b.hour + i), b.services, null)[0]?.id || null;
       }
-      const row = { ...clone(b), id: store.seq++, master, userId: me.id, status: 'wait', paid: false, refund: null, workStatus: null, noShow: false };
+      const row = { ...clone(b), id: store.seq++, master, hour, dur, userId: me.id, status: 'wait', paid: false, refund: null, workStatus: null, noShow: false };
       store.bookings.push(row); save();
       return clone(row);
     },
     async reschedule(id, date, hour) {
       await pause();
       const b = findB(id); canChange(b);
-      const p = slotProblem(date, hour, b.master, b.services, b.id);
+      const p = slotProblem(date, hour, b.master, b.services, b.id, b.dur || 1);
       if (p) throw new Error(p);
       b.date = date; b.hour = hour;
       if (!store.session.isOwner) b.status = 'wait';

@@ -676,3 +676,28 @@ p.owner-day { background: rgba(var(--tint), 0.04); border-color: rgba(var(--tint
 .demo-reset { appearance: none; border: 0; background: none; cursor: pointer; width: var(--tap); height: var(--tap); border-radius: 50%; color: var(--text-2); font-size: 20px; line-height: 1; }
 .demo-reset:active { transform: rotate(-90deg); transition: transform var(--mid) var(--ease); }
 .demo-hint { margin: -6px 0 14px; padding: 10px 12px; border-radius: 12px; font-size: 14px; color: var(--text-2); background: rgba(var(--tint), 0.06); }
+
+/* ---------- группы по расписанию (танцы, йога) ---------- */
+.cls { display: grid; grid-template-columns: 48px 1fr auto; gap: 12px; align-items: center; min-height: 64px; padding: 10px 0; }
+.cls + .cls { background: linear-gradient(rgba(var(--tint), 0.07), rgba(var(--tint), 0.07)) 0 0 / 100% 1px no-repeat; }
+.cls.free { cursor: pointer; border-radius: 14px; margin: 0 -8px; padding-left: 8px; padding-right: 8px; transition: transform var(--fast) var(--spring), background var(--fast) ease; }
+.cls.free:active { transform: scale(0.98); background-color: rgba(var(--tint), 0.1); }
+.cls .t { font-weight: 600; }
+.cls .s { font-size: 13px; color: var(--text-2); text-align: right; }
+.cls-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cls-info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cls-bar { display: block; height: 6px; margin-top: 6px; border-radius: 3px; background: rgba(var(--tint), 0.1); overflow: hidden; }
+.cls-bar i { display: block; height: 100%; border-radius: 3px; background: var(--silver); }
+.classes-pick { grid-template-columns: 1fr; }
+.cls-pick {
+  appearance: none; cursor: pointer; text-align: left; min-height: 60px; padding: 10px 16px; border-radius: 18px; font: inherit; color: var(--text);
+  border: 1px solid rgba(var(--tint), 0.14); background: var(--date-fill); box-shadow: var(--date-inset); transition: transform var(--fast) var(--spring);
+}
+.cls-pick b { display: block; font-size: 16px; }
+.cls-pick small { display: block; margin-top: 2px; font-size: 13px; color: var(--text-2); }
+.cls-pick.on { color: var(--sel-ink); background: var(--sel); border-color: var(--sel-border); }
+.cls-pick.on small { color: inherit; opacity: 0.85; }
+.cls-pick:disabled { opacity: 0.45; cursor: default; }
+.cls-pick:active:not(:disabled) { transform: scale(0.98); }
+.cls-who { cursor: pointer; padding: 10px 0 !important; }
+.cls-who + .cls-who { border-top: 1px solid rgba(var(--tint), 0.08); }

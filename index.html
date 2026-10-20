@@ -8,7 +8,7 @@
 <meta name="description" content="Сайт с онлайн-записью, который работает как приложение: салон красоты, барбершоп, фитнес-студия, детейлинг. Посмотрите демо-версии.">
 <title>Онлайн-запись — демо-версии</title>
 <link rel="icon" href="icon-car-192.png">
-<link rel="stylesheet" href="styles.css?v=20261020164507">
+<link rel="stylesheet" href="styles.css?v=20261020212504">
 <style>
   /* главная страница с демо-версиями: те же токены и стекло, что у сайтов */
   .intro { padding: 8px 0 22px; }
@@ -41,6 +41,7 @@
   @media (min-width: 760px) {
     #app { max-width: 900px; }
     .demos { grid-template-columns: 1fr 1fr; }
+    .demo:last-child { grid-column: 1 / -1; }
     .feat { grid-template-columns: 1fr 1fr; }
   }
 </style>
@@ -56,7 +57,8 @@
   <div class="demos">
     <a class="demo glass" href="salon.html" style="--img:url('salon-hero.jpg');--a:#f0c3ca"><span class="shade"></span><span class="kind">Студия красоты</span><h2>LUMI</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Маникюр, брови, ресницы · выбор мастера</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
     <a class="demo glass" href="barber.html" style="--img:url('barber-hero.jpg');--a:#e8c886"><span class="shade"></span><span class="kind">Барбершоп</span><h2>BASTION</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Стрижки и борода · выбор барбера</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
-    <a class="demo glass" href="fitness.html" style="--img:url('fit-hero.jpg');--a:#d7ff5c"><span class="shade"></span><span class="kind">Фитнес-студия</span><h2>PULSE</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Персональные тренировки · выбор тренера</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+    <a class="demo glass" href="dance.html" style="--img:url('dance-hero.jpg');--a:#ff8ce6"><span class="shade"></span><span class="kind">Студия танца</span><h2>FLOW</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Расписание групп · пробное занятие</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
+    <a class="demo glass" href="photo.html" style="--img:url('photo-hero.jpg');--a:#ffffff"><span class="shade"></span><span class="kind">Фотостудия</span><h2>FRAME</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Бронь залов по часам · фотограф, визажист</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
     <a class="demo glass" href="detailing.html" style="--img:url('hero.jpg?v=2');--a:#e6e9ee"><span class="shade"></span><span class="kind">Детейлинг-центр</span><h2>DETAILING</h2><span class="muted small" style="color:rgba(255,255,255,.8)">Боксы, статус машины, фото повреждений</span><span class="go">Открыть демо <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></a>
   </div>
 
@@ -65,7 +67,7 @@
   <section class="feat">
     <div class="card glass"><h2>Для клиента</h2><ul>
       <li>Услуги и цены, свободное время в календаре</li>
-      <li>Запись за минуту, выбор мастера</li>
+      <li>Запись за минуту: к мастеру, в группу или на аренду зала</li>
       <li>Перенос и отмена, история, повтор записи</li>
       <li>Добавляется на экран телефона как приложение</li>
     </ul></div>
